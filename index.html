@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Algo — Belajar Algoritma dengan Blok</title>
+  <meta name="description" content="Algo: aplikasi belajar algoritma dan pemrograman blok berbahasa Indonesia untuk siswa SMP. Misi bertahap, kreasi bebas, dan pemantauan guru.">
+  <meta name="theme-color" content="#4C5FD5">
+  <link rel="icon" href="img/algo-ikon.svg" type="image/svg+xml">
+  <link rel="icon" href="img/algo-ikon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=1.1.0">
+</head>
+<body>
+  <div id="app">
+    <div class="boot" role="status"><svg class="boot-logo" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="bootG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5A6CEB"/><stop offset="1" stop-color="#3442BE"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bootG)"/><path d="M162.4 268.0 L325.6 324 L162.4 380.0 Z" fill="#FFB020" stroke="#FFB020" stroke-width="20" stroke-linejoin="round"/><path d="M104 412 L256 106 L408 412" fill="none" stroke="#fff" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/></svg><p>Memuat Algo…</p></div>
+  </div>
+  <noscript><p style="padding:24px;font-family:sans-serif">Algo membutuhkan JavaScript. Aktifkan JavaScript di browser Anda.</p></noscript>
+
+  <!-- Pustaka blok (Blockly, lisensi Apache 2.0) — disimpan lokal agar tidak bergantung CDN -->
+  <script src="js/vendor/blockly/blockly_compressed.js?v=13.4.0"></script>
+  <script src="js/vendor/blockly/msg-id.js?v=13.4.0"></script>
+
+  <!-- Algo -->
+  <script src="js/config.js?v=1.1.0"></script>
+  <script src="js/ui.js?v=1.1.0"></script>
+  <script src="js/api.js?v=1.1.0"></script>
+  <script src="js/assets.js?v=1.1.0"></script>
+  <script src="js/sound.js?v=1.1.0"></script>
+  <script src="js/stage.js?v=1.1.0"></script>
+  <script src="js/runtime.js?v=1.1.0"></script>
+  <script src="js/blocks.js?v=1.1.0"></script>
+  <script src="js/missions.js?v=1.1.0"></script>
+  <script src="js/editor.js?v=1.1.0"></script>
+  <script src="js/guru.js?v=1.1.0"></script>
+  <script src="js/app.js?v=1.1.0"></script>
+  <script>
+    if (!window.Blockly) {
+      document.getElementById('app').innerHTML = '<div class="boot"><p><b>Pustaka blok gagal dimuat.</b><br>Pastikan folder <code>js/vendor/blockly</code> ikut terunggah, lalu muat ulang halaman.</p></div>';
+    }
+  </script>
+</body>
+</html>
