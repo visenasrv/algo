@@ -5,8 +5,10 @@
    ========================================================= */
 (function (global) {
   'use strict';
-  const B = global.Blockly;
-  const AB = global.AlgoBlocks;
+  // Pustaka blok (Blockly ±640 KB) dimuat saat editor pertama kali dibutuhkan,
+  // bukan saat aplikasi dibuka → halaman masuk & beranda tampil lebih cepat.
+  let B = global.Blockly || null;
+  let AB = global.AlgoBlocks || null;
   const AM = global.AlgoMissions;
   const RT = global.AlgoRuntime;
   const Stage = global.AlgoStage;
@@ -16,7 +18,35 @@
 
   const KEYMAP = { ArrowUp: 'atas', ArrowDown: 'bawah', ArrowLeft: 'kiri', ArrowRight: 'kanan', ' ': 'spasi', Spacebar: 'spasi' };
   const MEDIA = 'js/vendor/blockly/media/';
+  const LIBS = () => [
+    ['Blockly', 'js/vendor/blockly/blockly_compressed.js?v=13.4.0'],
+    ['__msg', 'js/vendor/blockly/msg-id.js?v=13.4.0'],
+    ['AlgoBlocks', 'js/blocks.js?v=' + (global.ALGO_BUILD || (global.ALGO_CONFIG && global.ALGO_CONFIG.APP_VERSION) || '1')]
+  ];
+  // perangkat dengan mouse (bukan layar sentuh) → tampilkan tips gulir mouse
+  const MOUSE = !!(global.matchMedia && global.matchMedia('(hover: hover) and (pointer: fine)').matches);
   let current = null;
+  let _libs = null;
+  let _openSeq = 0;
+
+  function libsReady() { return !!(global.Blockly && global.AlgoBlocks); }
+  function bindLibs() { B = global.Blockly; AB = global.AlgoBlocks; }
+  // unduh ketiganya sekaligus, jalankan berurutan (async=false menjaga urutan)
+  function loadLibs() {
+    if (libsReady()) { bindLibs(); return Promise.resolve(); }
+    if (_libs) return _libs;
+    const need = LIBS().filter(l => l[0] === '__msg' ? !global.Blockly : !global[l[0]]);
+    _libs = Promise.all(need.map(l => new Promise((res, rej) => {
+      const el = document.createElement('script');
+      el.src = l[1]; el.async = false;
+      el.onload = res; el.onerror = () => { el.remove(); rej(new Error('Gagal memuat ' + l[1])); };
+      document.head.appendChild(el);
+    }))).then(() => {
+      if (!libsReady()) throw new Error('Pustaka blok tidak lengkap');
+      bindLibs();
+    }).catch(err => { _libs = null; throw err; });
+    return _libs;
+  }
 
   // ---------- pembantu proyek ----------
   function cleanProject(p) {
@@ -85,6 +115,7 @@
               <button type="button" class="btn btn-primary btn-sm ed-save">💾 <span>Simpan</span></button>
               ${this.o.tugas ? '<button type="button" class="btn btn-accent btn-sm ed-submit">📤 <span>Kumpulkan</span></button>' : ''}
             ` : ''}
+            ${mode === 'misi' && !this.readOnly ? '<button type="button" class="btn btn-ghost btn-sm ed-restart" title="Hapus susunan blok dan mulai misi ini dari awal">↺ <span>Mulai ulang</span></button>' : ''}
             <button type="button" class="icon-btn ed-howto" aria-label="Cara bermain" title="Cara bermain">?</button>
             ${mode === 'kreasi' ? '<button type="button" class="icon-btn ed-menu" aria-label="Menu lainnya" title="Menu lainnya">⋮</button>' : ''}
           </div>
@@ -97,7 +128,7 @@
               <button type="button" class="icon-btn sm" data-u="undo" aria-label="Batalkan" title="Batalkan">↶</button>
               <button type="button" class="icon-btn sm" data-u="redo" aria-label="Ulangi" title="Ulangi">↷</button>
             </div>`}
-            <div class="ed-help"><span class="ed-help-ico">💬</span><div class="ed-help-text">${this.readOnly ? 'Mode lihat: kode tidak bisa diubah. Klik blok untuk melihat penjelasannya.' : 'Klik sebuah blok untuk melihat penjelasannya. Seret blok dari kiri ke area ini.'}</div></div>
+            <div class="ed-help"><span class="ed-help-ico">💬</span><div class="ed-help-text">${this.readOnly ? 'Mode lihat: kode tidak bisa diubah. Klik blok untuk melihat penjelasannya.' : (MOUSE ? 'Klik blok untuk penjelasannya · seret blok dari kiri ke sini · 🖱️ Gulir ↕ · Shift+gulir ↔ · Ctrl+gulir = zoom' : 'Klik sebuah blok untuk melihat penjelasannya. Seret blok dari kiri ke area ini.')}</div></div>
           </section>
           <aside class="ed-side">
             <div class="ed-run">
@@ -218,7 +249,8 @@
         trashcan: !this.readOnly,
         sounds: true,
         zoom: { controls: true, wheel: true, startScale: small ? 0.68 : 0.85, maxScale: 2, minScale: 0.35, scaleSpeed: 1.15, pinch: true },
-        move: { scrollbars: true, drag: true, wheel: false },
+        // gulir mouse = geser naik-turun, Shift + gulir = kiri-kanan, Ctrl (⌘ di Mac) + gulir = perbesar/perkecil
+        move: { scrollbars: true, drag: true, wheel: true },
         grid: { spacing: 28, length: 2, colour: '#E1E6F3', snap: false },
         maxTrashcanContents: 20
       });
@@ -353,6 +385,22 @@
       this.el.querySelectorAll('.seg-speed button').forEach(b => b.addEventListener('click', () => this.setSpeed(b.dataset.m)));
       this.el.querySelectorAll('.ed-undo button[data-u]').forEach(b => b.addEventListener('click', () => this.ws.undo(b.dataset.u === 'redo')));
       const fly = $('.ed-fly'); if (fly) fly.addEventListener('click', () => this.toggleFlyout());
+      // Ctrl (⌘ di Mac) + gulir di mana pun di bagian kode = perbesar/perkecil area kode, bukan halaman browser.
+      // Satu putaran roda = satu langkah zoom (lebih halus dari bawaan Blockly yang 2 langkah);
+      // di atas area kode, zoom berpusat di posisi mouse.
+      $('.ed-code').addEventListener('wheel', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || !this.ws) return;
+        e.preventDefault(); e.stopPropagation();
+        const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+        const amount = Math.max(-2, Math.min(2, -dy / 100));
+        if (!amount) return;
+        const t = e.target;
+        const onCode = t && t.closest && t.closest('svg.blocklySvg') && !t.closest('.blocklyFlyout');
+        try {
+          if (onCode) { const pt = B.browserEvents.mouseToSvg(e, this.ws.getParentSvg(), this.ws.getInverseScreenCTM()); this.ws.zoom(pt.x, pt.y, amount); }
+          else this.ws.zoomCenter(amount);
+        } catch (err) { this.ws.zoomCenter(amount); }
+      }, { capture: true, passive: false });
 
       if (this.mode === 'kreasi' && !this.readOnly) {
         $('.ed-name').addEventListener('input', () => { this.project.name = $('.ed-name').value; this._markDirty(); });
@@ -367,6 +415,7 @@
         card.classList.toggle('collapsed', open); mh.setAttribute('aria-expanded', String(!open));
       });
       const hb = $('.hint-btn'); if (hb) hb.addEventListener('click', () => this.nextHint());
+      const rs = $('.ed-restart'); if (rs) rs.addEventListener('click', () => this.restartMission());
 
       // perubahan pada area kode
       this.ws.addChangeListener((e) => {
@@ -646,6 +695,29 @@
       const card = this.$('.mission-card'); if (card) card.classList.remove('collapsed');
     }
 
+    // ↺ kembalikan area kode ke susunan awal misi (bintang yang sudah didapat tetap tersimpan)
+    async restartMission() {
+      const m = this.mission;
+      if (!m || this.readOnly) return;
+      const ok = await UI.confirmBox('Susunan blokmu sekarang akan dihapus dan diganti blok awal misi. Bintang yang sudah kamu dapat tetap tersimpan.', { title: 'Mulai misi dari awal?', ok: '↺ Mulai ulang' });
+      if (!ok || !this.el.isConnected) return;
+      this.rt.stopAll();
+      const fresh = AM.missionProject(m, null);
+      this.project = fresh;
+      this.currentId = fresh.current && fresh.sprites.some(s => s.id === fresh.current) ? fresh.current : fresh.sprites[0].id;
+      this._loadRuntime();
+      AB.ctx.sprites = this.project.sprites;
+      this._loadSpriteBlocks();
+      if ((this.project.variables || []).length) this._refreshToolbox();
+      if (AM.spritesOf(m).length > 1) this._renderSprites();
+      this.won = false; this.attempts = 0; this._wdShown = false;
+      this._feedback('');
+      this._updateCount(); this._refreshPad();
+      this._saveDraft(); // draf baru lebih baru dari solusi lama → tetap dari awal saat dibuka lagi
+      this._status('↺ Misi dimulai dari awal. Ayo susun blokmu!', 'info');
+      UI.toast('Misi dimulai dari awal.', 'ok');
+    }
+
     nextHint() {
       const m = this.mission;
       if (this.hintShown >= m.petunjuk.length) return;
@@ -850,28 +922,37 @@
 
     async save(silent) {
       if (this.readOnly || this.mode !== 'kreasi' || !this.o.onSave) return true;
+      if (this._saving) return this._saving;
       const btn = this.$('.ed-save');
-      btn.disabled = true;
+      const done = UI.busy(btn, 'Menyimpan…');
       const s = this.$('.save-state'); s.textContent = 'Menyimpan…'; s.className = 'save-state';
-      try {
-        const res = await this.o.onSave(this.data(), this);
-        if (res && res.ok) {
-          this.dirty = false;
-          s.textContent = 'Tersimpan ✓'; s.className = 'save-state ok';
-          this._clearDraft();
-          if (!silent) UI.toast(res.msg || 'Proyek tersimpan.', 'ok');
-          return true;
-        }
-        s.textContent = 'Gagal menyimpan'; s.className = 'save-state err';
-        UI.toast((res && res.msg) || 'Gagal menyimpan. Coba lagi.', 'err');
-        return false;
-      } finally { btn.disabled = false; }
+      let ok = false;
+      this._saving = (async () => {
+        try {
+          const res = await this.o.onSave(this.data(), this);
+          if (res && res.ok) {
+            ok = true;
+            this.dirty = false;
+            s.textContent = 'Tersimpan ✓'; s.className = 'save-state ok';
+            this._clearDraft();
+            if (!silent) UI.toast(res.msg || 'Proyek tersimpan.', 'ok');
+            return true;
+          }
+          s.textContent = 'Gagal menyimpan'; s.className = 'save-state err';
+          UI.toast((res && res.msg) || 'Gagal menyimpan. Coba lagi.', 'err');
+          return false;
+        } finally { done(ok ? 'Tersimpan' : null); this._saving = null; }
+      })();
+      return this._saving;
     }
 
     async submit() {
+      const sb = this.$('.ed-submit');
+      if (sb && sb._busy) return;
       const ok = await this.save(true);
-      if (!ok) return;
-      if (this.o.onSubmit) await this.o.onSubmit(this);
+      if (!ok || !this.o.onSubmit) return;
+      const done = UI.busy(sb, 'Mengirim…');
+      try { await this.o.onSubmit(this); } finally { done(); }
     }
 
     _draftKey() {
@@ -892,7 +973,8 @@
       try { d = JSON.parse(localStorage.getItem(this._draftKey()) || 'null'); } catch (e) { d = null; }
       if (!d || !d.data) return;
       if (this.mission) {
-        if (this.o.solution) return; // sudah ada solusi tersimpan
+        // ada solusi tersimpan: pakai draf hanya bila lebih baru (misalnya setelah ↺ Mulai ulang)
+        if (this.o.solution && !(d.t > (Date.parse(this.o.solutionAt || '') || 0) + 1000)) return;
         if (d.data.multi) this.project.sprites.forEach(sp => { if (d.data.sprites[sp.id]) sp.blocks = d.data.sprites[sp.id]; });
         else if (d.data.blocks) this.project.sprites[0].blocks = d.data;
         this._loadSpriteBlocks(); this._updateCount();
@@ -975,6 +1057,7 @@
           <li><div class="ht-ill"><span class="mb mb-mo">maju <i>300</i> langkah</span></div><div><b>Ubah angka atau teks</b> dengan mengklik kotak putih di dalam blok.</div></li>
           <li><div class="ht-ill"><span class="mini-run">▶ Jalankan</span></div><div><b>Jalankan.</b> Pakai mode 🐢 <b>Pelan</b> untuk melihat blok menyala satu per satu, atau 👣 <b>Langkah</b> untuk menjalankan satu blok setiap klik.</div></li>
           <li><div class="ht-ill"><span class="ht-trash">🗑️</span></div><div><b>Menghapus blok:</b> seret blok kembali ke daftar blok atau ke tempat sampah.</div></li>
+          ${MOUSE ? '<li><div class="ht-ill"><span class="ht-trash">🖱️</span></div><div><b>Memakai mouse:</b> gulir untuk menggeser area kode naik-turun (arahkan ke daftar blok untuk menggulir daftarnya). <b>Shift + gulir</b> = geser kiri-kanan. <b>Ctrl + gulir</b> = perbesar / perkecil blok.</div></li>' : ''}
         </ol>`,
         actions: [{ label: 'Mengerti!', cls: 'btn-primary' }]
       });
@@ -1014,11 +1097,25 @@
 
   global.AlgoEditor = {
     open(host, opts) {
-      if (current) current.destroy();
-      current = new Editor(host, opts);
-      return current;
+      if (current) { current.destroy(); current = null; }
+      const seq = ++_openSeq;
+      if (libsReady()) { bindLibs(); current = new Editor(host, opts); return current; }
+      host.innerHTML = '<div class="page-loading ed-loading"><i class="spin" aria-hidden="true"></i> Menyiapkan blok…</div>';
+      loadLibs().then(() => {
+        if (seq !== _openSeq || !host.isConnected) return;
+        host.innerHTML = '';
+        current = new Editor(host, opts);
+      }).catch(() => {
+        if (seq !== _openSeq || !host.isConnected) return;
+        host.innerHTML = '<div class="page-loading"><p><b>Pustaka blok gagal dimuat.</b><br>Periksa koneksi internet, lalu coba lagi.</p><button type="button" class="btn btn-primary ed-retry">Coba lagi</button></div>';
+        host.querySelector('.ed-retry').addEventListener('click', () => global.AlgoEditor.open(host, opts));
+      });
+      return null;
     },
-    close() { if (current) { current.destroy(); current = null; } },
+    close() { _openSeq++; if (current) { current.destroy(); current = null; } },
+    // pramuat diam-diam (dipanggil saat beranda/peta sudah tampil)
+    preload() { loadLibs().catch(() => { /* dicoba lagi saat editor dibuka */ }); },
+    get ready() { return libsReady(); },
     get current() { return current; },
     cleanProject, validProject
   };

@@ -642,3 +642,34 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .msp-label { font-size: 13px; font-weight: 800; color: var(--muted); }
 .msp-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .msp-list .sp-tile { width: 84px; flex: none; }
+
+/* ---------- v1.2: animasi memuat pada tombol ---------- */
+.spin {
+  display: inline-block; flex: none; width: 1.05em; height: 1.05em; font-style: normal;
+  border: 2.5px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: spin .7s linear infinite; vertical-align: -0.18em;
+}
+.btn.is-busy, .icon-btn.is-busy { cursor: progress; }
+.btn.is-busy:disabled, .icon-btn.is-busy:disabled { opacity: .92; }
+.btn.is-busy .busy-label { animation: busyPulse 1.1s ease-in-out infinite alternate; }
+@keyframes busyPulse { to { opacity: .55; } }
+.btn.is-done { pointer-events: none; }
+.btn.is-done:disabled { opacity: 1; }
+.btn-primary.is-done, .btn-ghost.is-done { background: var(--ok); border-color: var(--ok); color: #fff; box-shadow: 0 2px 0 #178A60; }
+.done-ico { font-style: normal; font-weight: 900; animation: doneIn .25s ease-out; }
+@keyframes doneIn { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.ed-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 60vh; }
+.ed-loading .spin { width: 22px; height: 22px; border-width: 3px; color: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 1.4s !important; animation-iteration-count: infinite !important; } }
+
+/* tombol reset (guru) & mulai ulang misi */
+.ed-restart { white-space: nowrap; }
+.matrix .sn { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.matrix .row-reset { width: 26px; height: 26px; font-size: 14px; border-radius: 8px; color: var(--muted); }
+.matrix .row-reset:hover { color: var(--bad); border-color: var(--bad); }
+.matrix th, .matrix td { padding: 8px 4px; }
+.matrix td.pc { min-width: 36px; }
+.matrix th:nth-child(2), .matrix td.sname { padding-inline: 8px; }
+/* saat tombol Simpan sibuk/selesai, teks status di sebelahnya disembunyikan (tidak dobel) */
+.save-state:has(+ .ed-save.is-busy), .save-state:has(+ .ed-save.is-done) { visibility: hidden; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

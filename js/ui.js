@@ -38,6 +38,33 @@
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, ms || 2800);
   }
 
+  // ---------- tombol sibuk: animasi memuat selama proses ----------
+  // const done = busy(tombol, 'Menyimpan…'); … done('Tersimpan') → ✓ sebentar, lalu kembali normal
+  function busy(btn, label) {
+    if (!btn || btn._busy) return function () { };
+    const icon = btn.classList.contains('icon-btn');
+    const html = btn.innerHTML, w = btn.offsetWidth;
+    btn._busy = true;
+    btn.disabled = true;
+    btn.classList.add('is-busy');
+    btn.setAttribute('aria-busy', 'true');
+    if (w && !icon) btn.style.minWidth = w + 'px';
+    const text = label === undefined ? 'Menyimpan…' : label;
+    btn.innerHTML = '<i class="spin" aria-hidden="true"></i>' + (text && !icon ? '<span class="busy-label">' + esc(text) + '</span>' : '');
+    return function done(okLabel) {
+      if (!btn._busy) return;
+      const restore = () => {
+        btn._busy = false; btn.innerHTML = html; btn.disabled = false;
+        btn.classList.remove('is-busy', 'is-done'); btn.removeAttribute('aria-busy'); btn.style.minWidth = '';
+      };
+      if (okLabel && btn.isConnected) {
+        btn.classList.remove('is-busy'); btn.classList.add('is-done');
+        btn.innerHTML = '<i class="done-ico" aria-hidden="true">✓</i>' + (icon ? '' : '<span class="busy-label">' + esc(okLabel) + '</span>');
+        setTimeout(restore, 1100);
+      } else restore();
+    };
+  }
+
   // ---------- jendela (modal) ----------
   const stack = [];
   function modal(o) {
@@ -76,8 +103,14 @@
         b.className = 'btn ' + (a.cls || 'btn-ghost');
         b.textContent = a.label;
         b.addEventListener('click', async () => {
+          if (b._busy) return;
           if (a.onClick) {
-            const r = await a.onClick(api, b);
+            let r = a.onClick(api, b);
+            if (r && typeof r.then === 'function') {
+              // proses async (menyimpan ke server) → tombol menampilkan animasi memuat
+              const done = a.busy === false ? function () { } : busy(b, a.busy || 'Menyimpan…');
+              try { r = await r; } finally { done(); }
+            }
             if (r === false) return;
           }
           if (a.close !== false) api.close(a.value);
@@ -207,5 +240,5 @@
     });
   }
 
-  global.AlgoUI = { esc, toast, modal, topModal, confirmBox, promptBox, confetti, fmtDate, fmtRelative, debounce, stars, download, pickFile };
+  global.AlgoUI = { esc, toast, busy, modal, topModal, confirmBox, promptBox, confetti, fmtDate, fmtRelative, debounce, stars, download, pickFile };
 })(window);

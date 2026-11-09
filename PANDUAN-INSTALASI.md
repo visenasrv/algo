@@ -212,6 +212,7 @@ Tunggu 1–2 menit, muat ulang halaman. Akan muncul: **Your site is live at `htt
 5. **Cetak kartu masuk**: tombol **🖨️ Cetak kartu masuk** mencetak kartu berisi nama pengguna, PIN, dan alamat situs (2 kartu per baris, siap digunting).
 6. **Bagikan alamat situs** ke siswa (grup WhatsApp kelas, papan tulis, atau kode QR).
 7. **Pantau**: menu **🗺️ Progres Misi** menampilkan tabel bintang per siswa per misi. Klik sel untuk melihat **dan menjalankan** solusi siswa. Tombol **⬇️ Unduh CSV** untuk rekap nilai.
+   - **Reset kemajuan** (misalnya awal semester baru, atau siswa ingin mengulang): tombol **↺** di ujung baris siswa menghapus semua bintang dan solusi misi siswa itu, lalu ia mulai lagi dari Misi 1. Tombol **↺ Reset kemajuan kelas** melakukan hal yang sama untuk seluruh kelas (Anda diminta mengetik nama kelas sebagai pengaman). Proyek Kreasi dan tugas **tidak** ikut terhapus. Unduh CSV dulu bila ingin menyimpan rekap lama, karena reset tidak bisa dibatalkan.
 8. **Beri tugas**: menu **📋 Tugas & Nilai** → **＋ Buat tugas** → pilih kelas & batas waktu. Siswa mengerjakan di Kreasi lalu menekan **📤 Kumpulkan**. Buka karya → jalankan → isi **Nilai** dan **Komentar**. Tombol *Sebelumnya / Berikutnya* mempercepat penilaian.
 9. **Coba misi seperti siswa**: di Ringkasan → **🎮 Coba misi seperti siswa** (tidak tersimpan).
 10. **Tambah guru lain**: Pengaturan → *Akun guru* → **＋ Guru** (khusus admin).
@@ -229,7 +230,9 @@ Tunggu 1–2 menit, muat ulang halaman. Akan muncul: **Your site is live at `htt
    - Klik kotak putih pada blok untuk mengubah angka atau teks.
    - Tekan **▶ Jalankan**. Pakai **🐢 Pelan** untuk melihat blok menyala satu per satu, atau **👣 Langkah** untuk menjalankan satu blok setiap klik.
    - Hapus blok dengan menyeretnya kembali ke daftar blok atau ke tempat sampah.
+   - **Memakai mouse** (laptop/komputer): **gulir** roda mouse untuk menggeser area kode naik-turun; arahkan kursor ke daftar blok lalu gulir untuk melihat blok di bawahnya. **Shift + gulir** = geser kiri-kanan. **Ctrl + gulir** (⌘ + gulir di Mac) = perbesar/perkecil blok. Di HP: geser dengan satu jari, cubit dua jari untuk memperbesar.
 4. **★★★**: selesaikan misi dengan blok sesedikit mungkin.
+   - Ingin mengulang dari nol? Tekan **↺ Mulai ulang** di bagian atas layar misi. Blok kembali ke susunan awal misi, sedangkan bintang yang sudah didapat tetap tersimpan.
 5. **🎨 Kreasi**: buat cerita atau game. Mode **Pemula** menampilkan blok dasar, mode **Lengkap** menampilkan semua blok. Tekan **💾 Simpan** sesering mungkin.
 6. **📋 Tugas**: kerjakan tugas dari guru, lalu tekan **📤 Kumpulkan**.
 7. Blok **ketika tombol … ditekan**: ketuk tombol = skrip jalan sekali; tahan tombol = skrip diulang terus dan tokoh meluncur mulus. Di HP, tombol panah muncul di bawah panggung untuk game yang memakai tombol.
@@ -283,11 +286,18 @@ Tunggu 1–2 menit, lalu tekan **Ctrl + Shift + R** di browser.
 
 > ⚠️ Jangan memilih *Deployment baru*. Itu menghasilkan URL `/exec` yang berbeda sehingga `config.js` harus diubah lagi.
 
-**Pembaruan ke versi 1.1 (misi 13–19)** — perlu memperbarui **keduanya**:
+**Pembaruan ke versi 1.2 (reset misi, animasi simpan, lebih cepat)** — perlu memperbarui **keduanya**, backend dulu:
 
-1. **Backend dulu**: tempel `Kode.gs` versi 1.1 → Simpan → **Kelola deployment** → ✏️ **Edit** → **Versi baru** → **Terapkan**. Tidak perlu menjalankan `setupAlgo` lagi, dan data lama tidak berubah. Backend lama menolak nomor misi di atas 12, jadi tanpa langkah ini kemajuan misi 13–19 tidak tersimpan.
-2. **Frontend**: salin isi `algo.zip` baru ke folder repo (pertahankan `GAS_URL` Anda di `js/config.js`), lalu `git add .` → `git commit` → `git push`.
-3. Cek: buka URL `/exec` di browser, harus tertulis `"v":"1.1.0"`.
+1. **Backend**: buka editor Apps Script → hapus seluruh isi `Kode.gs` → tempel `Kode.gs` versi 1.2 → **Simpan** → **Terapkan** → **Kelola deployment** → ✏️ **Edit** → **Versi: Versi baru** → **Terapkan**. Tidak perlu menjalankan `setupAlgo` lagi, dan data lama tidak berubah.
+2. **Frontend**: salin isi `algo.zip` baru ke folder repo dan timpa berkas lama. **Sebelum push**, buka `js/config.js` dan isi lagi `GAS_URL` dengan URL `/exec` Anda (di ZIP masih `XXXX`). Lalu:
+   ```powershell
+   git add .
+   git commit -m "Algo 1.2"
+   git push
+   ```
+3. Cek: buka URL `/exec` di browser, harus tertulis `"v":"1.2.0"`. Lalu buka situs Algo dan tekan **Ctrl + Shift + R**.
+
+> Perbarui backend lebih dulu. Frontend 1.2 dengan backend lama tetap berjalan, tetapi tombol **↺ Reset kemajuan** di panel guru akan menampilkan *Perintah tidak dikenal* sampai backend diperbarui.
 
 ---
 
@@ -300,6 +310,11 @@ Algo dirancang tetap cepat walau dipakai ratusan siswa:
 - **Pencarian baris cepat** (TextFinder): saat menyimpan, Algo tidak membaca seluruh sheet.
 - **Penggabung permintaan**: beberapa permintaan baca dari layar yang sama dikirim sebagai satu panggilan.
 - **Kemajuan offline**: bila internet putus saat misi selesai, kemajuan disimpan di HP dan dikirim otomatis saat tersambung kembali.
+- **Tampil dari perangkat dulu** (v1.2): beranda, peta misi, dan panel guru langsung tampil dari salinan di HP, lalu diperbarui diam-diam di latar paling sering tiap 60 detik. Pindah menu tidak lagi menunggu server.
+- **Simpan guru cukup 1 panggilan** (v1.2): setelah menyimpan kelas, siswa, tugas, nilai, atau reset, jawaban server langsung membawa data ringkasan terbaru, dan hanya cache yang berubah yang dibaca ulang.
+- **Pustaka blok dimuat belakangan** (v1.2): halaman masuk dan beranda tidak menunggu pustaka blok (±640 KB). Pustaka itu diunduh diam-diam setelah halaman tampil, sehingga membuka misi tetap instan.
+- **Proyek tersimpan di perangkat** (v1.2): 6 proyek terakhir disalin di HP. Membuka proyek yang belum berubah tidak perlu menunggu server.
+- **Tahan sinyal lemah** (v1.2): permintaan punya batas waktu dan dicoba ulang otomatis. Setiap simpanan membawa kode unik, jadi bila dikirim dua kali karena sinyal putus-sambung, server hanya menyimpannya sekali.
 - **Pemanasan server**: pemicu `keepWarm` berjalan tiap 1 menit, **hanya pukul 06.00–20.59**, agar data tetap siap di cache. Pemakaiannya kira-kira 10–15 menit per hari dari kuota pemicu akun Gmail (±90 menit/hari). Bila tidak diperlukan, jalankan `matikanKeepWarm` di editor. Aplikasi tetap berjalan normal, hanya pembukaan pertama di pagi hari sedikit lebih lambat.
 
 Hasil uji di simulator Apps Script (400 siswa, 4.800 baris progres, 400 proyek):
@@ -307,7 +322,9 @@ Hasil uji di simulator Apps Script (400 siswa, 4.800 baris progres, 400 proyek):
 | Kejadian | Panggilan server | Sel spreadsheet dibaca |
 |---|---|---|
 | Siswa masuk (sekaligus memuat beranda) | 1 | 0 bila cache hangat |
-| Siswa menyimpan misi | 1 | ±21 |
+| Siswa menyimpan misi | 1 | ±9.600 sel dalam 1 kali baca (kolom siswa & misi), bukan 12 kali baca per baris |
+| Guru menyimpan kelas/siswa/tugas/nilai | 1 (sebelumnya 2) | hanya data yang berubah |
+| Guru mereset kemajuan 1 kelas (430 siswa, ±4.800 baris) | 1 | 1 kali urut + 1 penghapusan per siswa |
 | Guru membuka Ringkasan (cache dingin) | 1 | ±41.500 |
 | Guru membuka Ringkasan (cache hangat) | 1 | 0 |
 | Guru membuka Progres Misi (cache hangat) | 1 | 0 |
@@ -320,6 +337,7 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 - PIN siswa tersimpan sebagai teks agar guru bisa mencetak kartu. PIN hanya untuk masuk ke Algo; jangan gunakan untuk akun lain.
 - **🔑 PIN baru** di menu Kelas & Siswa langsung mengeluarkan siswa dari semua perangkat.
 - Menghapus siswa tidak menghapus kemajuan dan proyeknya di spreadsheet.
+- **↺ Reset kemajuan** (Progres Misi) menghapus baris progres siswa dari sheet `Progres` secara permanen. Urutan baris di sheet itu ikut diurutkan menurut siswa; ini normal.
 
 ---
 
@@ -339,6 +357,8 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 | Tampilan berantakan tanpa warna | Folder `css/`/`js/` tidak ikut | Jangan unggah lewat web GitHub; ulangi B4 lewat PowerShell |
 | Situs masih versi lama | Cache browser | **Ctrl + Shift + R** atau jendela Incognito |
 | *Proyek terlalu besar* | Lebih dari ±180 KB | Kurangi jumlah tokoh/blok, atau pisah menjadi dua proyek |
+| *Perintah tidak dikenal: gResetProgress* | Frontend sudah 1.2, backend masih versi lama | Perbarui backend (Bagian E, pembaruan ke versi 1.2) |
+| *Menyiapkan blok…* lama / *Pustaka blok gagal dimuat* | Internet lambat saat pertama membuka misi, atau folder `js/vendor/blockly` tidak ikut terunggah | Tekan **Coba lagi**. Pastikan folder `js/vendor/blockly` ada di repo GitHub |
 | *Password authentication is not supported* (git) | GitHub tidak menerima kata sandi biasa | Pakai Personal Access Token (B4) |
 
 **Fungsi bantu di editor Apps Script**
@@ -353,7 +373,7 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 
 ---
 
-## Batasan versi 1.1
+## Batasan versi 1.2
 
 - Belum ada editor gambar atau unggah gambar sendiri; tokoh dan latar dipilih dari pustaka bawaan (termasuk Pesut Mahakam dan burung Enggang).
 - Belum ada fitur *klon* dan berbagi karya ke publik.

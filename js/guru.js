@@ -19,31 +19,43 @@
     view: null,
 
     // ---------- data ----------
-    async boot(force) {
-      if (!this.data) {
-        try { this.data = JSON.parse(localStorage.getItem('algo_guru_boot') || 'null'); } catch (e) { this.data = null; }
-      }
-      if (!force && this.data && Date.now() - this._at < 30000) return true;
-      const r = await Api.q('gBoot', force ? { _fresh: true } : {});
-      if (r && r.success) {
-        this.data = r; this._at = Date.now();
-        try { localStorage.setItem('algo_guru_boot', JSON.stringify(r)); } catch (e) { /* abaikan */ }
-        if (r.settings) { this.app.info = Object.assign(this.app.info || {}, r.settings); localStorage.setItem('algo_info', JSON.stringify(this.app.info)); }
-        return true;
-      }
+    // salinan di perangkat dipakai dulu; server dihubungi bila data > 60 detik
+    hydrate() {
+      if (this.data) return true;
+      try {
+        const c = JSON.parse(localStorage.getItem('algo_guru_boot') || 'null');
+        if (c && c.guru) { this.data = c; this._at = Number(c._t) || 0; }
+      } catch (e) { this.data = null; }
+      return !!this.data;
+    },
+    fresh() { return this.data && Date.now() - this._at < 60000; },
+    setData(r) {
+      this.data = r; this._at = Number(r._t) || Date.now(); r._t = this._at;
+      try { localStorage.setItem('algo_guru_boot', JSON.stringify(r)); } catch (e) { /* abaikan */ }
+      if (r.settings && this.app) { this.app.info = Object.assign(this.app.info || {}, r.settings); try { localStorage.setItem('algo_info', JSON.stringify(this.app.info)); } catch (e) { /* abaikan */ } }
+    },
+    // force = abaikan batas kesegaran; reread = server membaca ulang SEMUA sheet (tombol "Segarkan data")
+    async boot(force, reread) {
+      this.hydrate();
+      if (!force && this.fresh()) return true;
+      const r = await Api.q('gBoot', reread ? { _fresh: true } : {});
+      if (r && r.success) { r._t = Date.now(); this.setData(r); return true; }
       if (!this.data) { UI.toast((r && r.message) || 'Gagal memuat data guru.', 'err'); return false; }
       return true;
     },
+    _snap() { const d = this.data || {}; return JSON.stringify([d.kelas, d.siswa, d.tugas, d.ringkas, d.aktivitas, d.settings]); },
     kelas(id) { return (this.data.kelas || []).find(k => k.id === id); },
     siswaOf(kelasId) { return (this.data.siswa || []).filter(s => s.kelasId === kelasId && s.aktif !== false && s.aktif !== 'FALSE').sort((a, b) => a.nama.localeCompare(b.nama)); },
     sum(sid) { return (this.data.ringkas && this.data.ringkas.perSiswa && this.data.ringkas.perSiswa[sid]) || { selesai: 0, bintang: 0, terakhir: '' }; },
 
+    // simpan + minta data panel terbaru dalam SATU panggilan (_boot)
     async act(action, data, okMsg) {
-      const r = await Api.call(action, data);
+      const r = await Api.call(action, Object.assign({}, data, { _boot: true }));
       if (!r || !r.success) { UI.toast((r && r.message) || 'Gagal menyimpan.', 'err', 4000); return null; }
       if (okMsg) UI.toast(okMsg, 'ok');
-      this._at = 0; this.progress = {}; this.subs = {};
-      await this.boot(true);
+      this.progress = {}; this.subs = {};
+      if (r.boot && r.boot.success) { r.boot._t = Date.now(); r.boot.v = r.v; this.setData(r.boot); }
+      else await this.boot(true);
       return r;
     },
 
@@ -54,9 +66,12 @@
       if (page === 'proyek') return this.openProject(parts[1]);
       if (page === 'solusi') return this.openSolution(parts[1], +parts[2]);
       if (page === 'misi') return this.tryMission(+parts[1]);
-      if (!this.data) view.innerHTML = '<div class="page-loading">Memuat panel guru…</div>';
-      const ok = await this.boot();
-      if (!ok) { this.shell(page, '<div class="empty">Data tidak bisa dimuat. Periksa koneksi lalu muat ulang halaman.</div>'); return; }
+      if (!this.hydrate()) {
+        view.innerHTML = '<div class="page-loading ed-loading"><i class="spin" aria-hidden="true"></i> Memuat panel guru…</div>';
+        const ok = await this.boot(true);
+        if (!ok) { this.shell(page, '<div class="empty">Data tidak bisa dimuat. Periksa koneksi lalu muat ulang halaman.</div>'); return; }
+      } else if (!this.fresh()) this._revalidate(location.hash);
+      app.idlePreload();
       switch (page) {
         case 'kelas': return this.pageKelas(parts[1]);
         case 'progres': return this.pageProgres(parts[1]);
@@ -64,6 +79,18 @@
         case 'pengaturan': return this.pageSettings();
         default: return this.pageHome();
       }
+    },
+
+    // segarkan di latar; tampilan diperbarui hanya bila data berubah & guru tidak sedang mengetik/membuka jendela
+    _revalidate(hash) {
+      const before = this._snap();
+      this.boot(true).then(() => {
+        if (this._snap() === before || location.hash !== hash || UI.topModal()) return;
+        const a = document.activeElement;
+        if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+        if (/\/pengaturan/.test(hash)) return;
+        this.route(this.view, this.app.parts().slice(1), this.app);
+      });
     },
 
     shell(active, html) {
@@ -129,7 +156,11 @@
             <button type="button" class="btn btn-ghost refresh">🔄 Segarkan data</button>
           </div>
         </section>`);
-      this.view.querySelector('.refresh').addEventListener('click', async () => { await this.boot(true); this.pageHome(); UI.toast('Data diperbarui dari spreadsheet.', 'ok'); });
+      this.view.querySelector('.refresh').addEventListener('click', async (e) => {
+        const done = UI.busy(e.currentTarget, 'Menyegarkan…');
+        await this.boot(true, true); done();
+        this.pageHome(); UI.toast('Data diperbarui dari spreadsheet.', 'ok');
+      });
       this.view.querySelector('.try-m').addEventListener('click', () => this.pickMission());
     },
 
@@ -198,10 +229,14 @@
       v.querySelector('.add-k').addEventListener('click', () => this.formKelas());
       if (!k) return;
       v.querySelector('.edit-k').addEventListener('click', () => this.formKelas(k));
-      v.querySelector('.del-k').addEventListener('click', async () => {
+      v.querySelector('.del-k').addEventListener('click', async (e) => {
+        const b = e.currentTarget;
         if (ss.length) { UI.toast('Pindahkan atau hapus siswanya dulu sebelum menghapus kelas.', 'err', 4000); return; }
         if (!(await UI.confirmBox(`Hapus kelas ${k.nama}?`, { ok: 'Hapus', danger: true }))) return;
-        if (await this.act('gDeleteKelas', { id: k.id }, 'Kelas dihapus.')) location.hash = '#/guru/kelas';
+        const done = UI.busy(b);
+        const r = await this.act('gDeleteKelas', { id: k.id }, 'Kelas dihapus.');
+        done();
+        if (r) location.hash = '#/guru/kelas';
       });
       v.querySelector('.add-s').addEventListener('click', () => this.formSiswa(null, k.id));
       v.querySelector('.imp-s').addEventListener('click', () => this.importSiswa(k));
@@ -214,14 +249,21 @@
       v.querySelectorAll('tbody tr').forEach(tr => {
         const s = ss.find(x => x.id === tr.dataset.id);
         tr.querySelector('[data-a=edit]').addEventListener('click', () => this.formSiswa(s, k.id));
-        tr.querySelector('[data-a=pin]').addEventListener('click', async () => {
+        tr.querySelector('[data-a=pin]').addEventListener('click', async (e) => {
+          const b = e.currentTarget;
           if (!(await UI.confirmBox(`Buat PIN baru untuk ${s.nama}? PIN lama tidak berlaku lagi dan ${s.nama} akan keluar dari perangkat lain.`, { ok: 'Buat PIN baru' }))) return;
+          const done = UI.busy(b);
           const r = await this.act('gResetPin', { id: s.id });
+          done();
           if (r) { UI.modal({ title: 'PIN baru', body: `<p>PIN baru untuk <b>${esc(s.nama)}</b>:</p><p class="big-pin">${esc(r.pin)}</p>`, actions: [{ label: 'OK', cls: 'btn-primary' }] }); this.pageKelas(k.id); }
         });
-        tr.querySelector('[data-a=del]').addEventListener('click', async () => {
+        tr.querySelector('[data-a=del]').addEventListener('click', async (e) => {
+          const b = e.currentTarget;
           if (!(await UI.confirmBox(`Hapus ${s.nama}? Kemajuan misi & proyeknya tetap tersimpan di spreadsheet, tapi siswa tidak bisa masuk lagi.`, { ok: 'Hapus', danger: true }))) return;
-          if (await this.act('gDeleteSiswa', { id: s.id }, 'Siswa dihapus.')) this.pageKelas(k.id);
+          const done = UI.busy(b);
+          const r = await this.act('gDeleteSiswa', { id: s.id }, 'Siswa dihapus.');
+          done();
+          if (r) this.pageKelas(k.id);
         });
       });
     },
@@ -236,9 +278,7 @@
             const f = api.body.querySelector('form');
             const nama = f.nama.value.trim();
             if (!nama) { UI.toast('Nama kelas wajib diisi.', 'err'); return false; }
-            btn.disabled = true;
             const r = await this.act('gSaveKelas', { id: k ? k.id : '', nama, keterangan: f.ket.value.trim() }, 'Kelas disimpan.');
-            btn.disabled = false;
             if (!r) return false;
             location.hash = '#/guru/kelas/' + r.kelas.id;
             this.pageKelas(r.kelas.id);
@@ -263,9 +303,7 @@
             const f = api.body.querySelector('form');
             const nama = f.nama.value.trim();
             if (!nama) { UI.toast('Nama wajib diisi.', 'err'); return false; }
-            btn.disabled = true;
             const r = await this.act('gSaveSiswa', { id: s ? s.id : '', nama, username: f.username.value.trim(), kelasId: f.kelas.value }, s ? 'Data siswa disimpan.' : null);
-            btn.disabled = false;
             if (!r) return false;
             if (!s) UI.modal({ title: 'Siswa ditambahkan', body: `<p><b>${esc(r.siswa.nama)}</b></p><p>Nama pengguna: <code>${esc(r.siswa.username)}</code></p><p>PIN: <b class="big-pin">${esc(r.siswa.pin)}</b></p>`, actions: [{ label: 'OK', cls: 'btn-primary' }] });
             this.pageKelas(f.kelas.value);
@@ -287,9 +325,7 @@
             const rows = parseRows(api.body.querySelector('textarea').value);
             if (!rows.length) { UI.toast('Belum ada nama yang ditempel.', 'err'); return false; }
             if (rows.length > 200) { UI.toast('Maksimal 200 siswa sekali tempel.', 'err'); return false; }
-            btn.disabled = true; btn.textContent = 'Menyimpan…';
             const r = await this.act('gImportSiswa', { kelasId: k.id, rows }, null);
-            btn.disabled = false; btn.textContent = 'Tambahkan';
             if (!r) return false;
             UI.toast(`${r.ditambah} siswa ditambahkan${r.dilewati ? `, ${r.dilewati} dilewati (nama pengguna sudah dipakai)` : ''}.`, 'ok', 4500);
             this.pageKelas(k.id);
@@ -355,18 +391,27 @@
           tot++; st += Number(p.bintang) || 0;
           return `<td class="pc s${p.bintang}" data-s="${esc(s.id)}" data-m="${m.id}" tabindex="0" title="${esc(m.judul)}: ${p.bintang} bintang, ${p.jumlahBlok} blok">${'★'.repeat(Number(p.bintang) || 0)}</td>`;
         }).join('');
-        return `<tr><td class="num">${i + 1}</td><td class="sname">${esc(s.nama)}</td>${cells}<td class="tot"><b>${tot}</b>/${AM.MISSIONS.length}<br><span class="muted">★${st}</span></td></tr>`;
+        return `<tr data-sid="${esc(s.id)}"><td class="num">${i + 1}</td><td class="sname"><div class="sn"><span>${esc(s.nama)}</span>${tot ? `<button type="button" class="icon-btn sm row-reset" title="Reset kemajuan misi ${esc(s.nama)}" aria-label="Reset kemajuan misi ${esc(s.nama)}">↺</button>` : ''}</div></td>${cells}<td class="tot"><b>${tot}</b>/${AM.MISSIONS.length}<br><span class="muted">★${st}</span></td></tr>`;
       }).join('');
       const foot = `<tr class="foot"><td></td><td>Selesai</td>${colDone.map(n => `<td>${ss.length ? Math.round(n / ss.length * 100) : 0}%</td>`).join('')}<td></td></tr>`;
       const card = this.view.querySelector('.prog-card');
       card.innerHTML = ss.length ? `
         <div class="card-head"><h3>${esc(k.nama)} · ${ss.length} siswa</h3>
-          <div class="card-actions"><button type="button" class="btn btn-ghost btn-sm csv">⬇️ Unduh CSV</button><button type="button" class="btn btn-ghost btn-sm ref">🔄 Segarkan</button></div></div>
+          <div class="card-actions"><button type="button" class="btn btn-ghost btn-sm csv">⬇️ Unduh CSV</button><button type="button" class="btn btn-ghost btn-sm ref">🔄 Segarkan</button><button type="button" class="btn btn-ghost btn-sm reset-k" ${rows.some(r => ss.some(s => s.id === r.siswaId)) ? '' : 'disabled'}>↺ Reset kemajuan kelas</button></div></div>
         <div class="table-wrap"><table class="tbl matrix"><thead><tr><th>No</th><th>Nama</th>${head}<th>Total</th></tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
-        <p class="muted small legend">★★★ hemat blok · ★★ cukup · ★ selesai dengan banyak blok · “·” belum selesai</p>`
+        <p class="muted small legend">★★★ hemat blok · ★★ cukup · ★ selesai dengan banyak blok · “·” belum selesai · ↺ reset kemajuan siswa (mulai lagi dari Misi 1)</p>`
         : '<div class="empty">Belum ada siswa di kelas ini.</div>';
       if (!ss.length) return;
-      card.querySelector('.ref').addEventListener('click', async () => { await this.loadProgress(k.id, true); this.pageProgres(k.id); });
+      card.querySelector('.ref').addEventListener('click', async (e) => {
+        const done = UI.busy(e.currentTarget, 'Menyegarkan…');
+        await this.loadProgress(k.id, true); done();
+        this.pageProgres(k.id);
+      });
+      card.querySelectorAll('.row-reset').forEach(b => b.addEventListener('click', () => {
+        const s = ss.find(x => x.id === b.closest('tr').dataset.sid);
+        if (s) this.resetProgress(b, k, s);
+      }));
+      card.querySelector('.reset-k').addEventListener('click', (e) => this.resetProgress(e.currentTarget, k, null));
       card.querySelector('.csv').addEventListener('click', () => {
         const lines = [['No', 'Nama', 'Nama pengguna'].concat(AM.MISSIONS.map(m => 'Misi ' + m.id)).concat(['Misi selesai', 'Total bintang'])];
         ss.forEach((s, i) => {
@@ -390,6 +435,26 @@
         td.addEventListener('click', open);
         td.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
       });
+    },
+
+    // ↺ hapus bintang & solusi misi → siswa mulai lagi dari Misi 1 (proyek & tugas tidak tersentuh)
+    async resetProgress(btn, k, s) {
+      let ok;
+      if (s) {
+        ok = await UI.confirmBox(`Semua bintang dan solusi misi ${s.nama} akan dihapus, lalu ${s.nama} mulai lagi dari Misi 1. Proyek Kreasi dan tugasnya tidak ikut terhapus. Tindakan ini tidak bisa dibatalkan.`, { title: 'Reset kemajuan misi?', ok: '↺ Reset', danger: true });
+      } else {
+        const typed = await UI.promptBox(`Semua bintang dan solusi misi SELURUH siswa kelas ${k.nama} akan dihapus, dan mereka mulai lagi dari Misi 1. Proyek Kreasi dan tugas tidak ikut terhapus. Tindakan ini tidak bisa dibatalkan.\n\nKetik nama kelas (${k.nama}) untuk melanjutkan:`, '', { title: 'Reset kemajuan kelas ' + k.nama, ok: '↺ Reset kelas', max: 30 });
+        if (typed == null) return;
+        ok = typed.trim().toLowerCase() === String(k.nama).trim().toLowerCase();
+        if (!ok) { UI.toast('Nama kelas tidak cocok. Reset dibatalkan.', 'err'); return; }
+      }
+      if (!ok) return;
+      const done = UI.busy(btn, s ? '' : 'Mereset…');
+      const r = await this.act('gResetProgress', s ? { siswaId: s.id } : { kelasId: k.id });
+      done();
+      if (!r) return;
+      UI.toast(s ? `Kemajuan misi ${s.nama} direset (${r.dihapus} misi dihapus).` : `Kemajuan misi kelas ${k.nama} direset (${r.siswa} siswa, ${r.dihapus} misi dihapus).`, 'ok', 4200);
+      if ((this.app.parts()[1] || '') === 'progres') this.pageProgres(k.id);
     },
 
     async openSolution(siswaId, misiId) {
@@ -448,9 +513,7 @@
             const kelasIds = Array.from(f.querySelectorAll('input[name=k]:checked')).map(x => x.value);
             if (!judul) { UI.toast('Judul wajib diisi.', 'err'); return false; }
             if (!kelasIds.length) { UI.toast('Pilih minimal satu kelas.', 'err'); return false; }
-            btn.disabled = true;
             const r = await this.act('gSaveTugas', { id: t ? t.id : '', judul, petunjuk: f.petunjuk.value.trim(), kelasIds: kelasIds.join(','), batas: f.batas.value, status: f.tutup && f.tutup.checked ? 'tutup' : 'buka' }, 'Tugas disimpan.');
-            btn.disabled = false;
             if (!r) return false;
             location.hash = '#/guru/tugas/' + r.tugas.id;
             this.route(this.view, ['tugas', r.tugas.id], this.app);
@@ -481,10 +544,14 @@
       this.view.querySelector('.edit-t').addEventListener('click', () => this.formTugas(t));
       this.view.querySelector('.del-t').addEventListener('click', async () => {
         if (!(await UI.confirmBox(`Hapus tugas "${t.judul}"? Proyek siswa tetap tersimpan sebagai proyek biasa.`, { ok: 'Hapus', danger: true }))) return;
-        if (await this.act('gDeleteTugas', { id: t.id }, 'Tugas dihapus.')) location.hash = '#/guru/tugas';
+        const done = UI.busy(this.view.querySelector('.del-t'), 'Menghapus…');
+        const r = await this.act('gDeleteTugas', { id: t.id }, 'Tugas dihapus.');
+        done();
+        if (r) location.hash = '#/guru/tugas';
       });
       const rows = await this.loadSubs(id);
       if (this.app.parts()[2] !== id) return;
+      if (!this.view.querySelector('.subs-card')) return;
       const byS = {}; rows.forEach(r => { byS[r.siswaId] = r; });
       const students = [];
       kelasIds.forEach(kid => this.siswaOf(kid).forEach(s => students.push(Object.assign({ kelasNama: (this.kelas(kid) || {}).nama }, s))));
@@ -501,7 +568,11 @@
       const card = this.view.querySelector('.subs-card');
       card.innerHTML = `<div class="card-head"><h3>Karya siswa</h3><div class="card-actions"><button type="button" class="btn btn-ghost btn-sm csv">⬇️ Unduh nilai (CSV)</button><button type="button" class="btn btn-ghost btn-sm ref">🔄 Segarkan</button></div></div>
         ${students.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Siswa</th><th>Status</th><th>Diperbarui</th><th>Nilai</th><th></th></tr></thead><tbody>${tr}</tbody></table></div>` : '<div class="empty">Belum ada siswa di kelas tujuan.</div>'}`;
-      card.querySelector('.ref').addEventListener('click', async () => { await this.loadSubs(id, true); this.pageTugasDetail(id); });
+      card.querySelector('.ref').addEventListener('click', async (e) => {
+        const done = UI.busy(e.currentTarget, 'Menyegarkan…');
+        await this.loadSubs(id, true); done();
+        this.pageTugasDetail(id);
+      });
       card.querySelector('.csv').addEventListener('click', () => {
         const lines = [['No', 'Nama', 'Kelas', 'Status', 'Nilai', 'Komentar']];
         students.forEach((s, i) => {
@@ -547,9 +618,11 @@
             e.preventDefault();
             const n = f.nilai.value.trim();
             if (n !== '' && (isNaN(+n) || +n < 0 || +n > 100)) { UI.toast('Nilai harus 0 sampai 100.', 'err'); return; }
-            const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+            const btn = f.querySelector('button[type=submit]');
+            if (btn._busy) return;
+            const done = UI.busy(btn, 'Menyimpan…');
             const res = await Api.call('gGrade', { id, nilai: n, komentar: f.komentar.value.trim() });
-            btn.disabled = false;
+            done(res && res.success ? 'Tersimpan' : null);
             if (res && res.success) { UI.toast('Nilai disimpan.', 'ok'); meta.nilai = n; this.subs = {}; this._at = 0; }
             else UI.toast((res && res.message) || 'Gagal menyimpan nilai.', 'err');
           });
@@ -596,15 +669,22 @@
       v.querySelector('.set-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const f = e.target;
+        const btn = f.querySelector('button[type=submit]');
+        if (btn._busy) return;
+        const done = UI.busy(btn, 'Menyimpan…');
         const r = await this.act('gSaveSettings', { namaSekolah: f.namaSekolah.value.trim(), bukaSemuaMisi: f.bukaSemuaMisi.checked, izinkanTamu: f.izinkanTamu.checked }, 'Pengaturan disimpan.');
-        if (r) this.pageSettings();
+        done(r ? 'Tersimpan' : null); // isian sudah menampilkan nilai baru → tidak perlu menggambar ulang halaman
       });
       v.querySelector('.pw-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const f = e.target;
         if (f.baru.value.length < 6) { UI.toast('Kata sandi baru minimal 6 karakter.', 'err'); return; }
         if (f.baru.value !== f.ulang.value) { UI.toast('Ulangan kata sandi tidak sama.', 'err'); return; }
+        const btn = f.querySelector('button[type=submit]');
+        if (btn._busy) return;
+        const done = UI.busy(btn, 'Menyimpan…');
         const r = await Api.call('gChangePassword', { lama: f.lama.value, baru: f.baru.value });
+        done(r && r.success ? 'Diganti' : null);
         if (r && r.success) {
           UI.toast('Kata sandi diganti.', 'ok');
           if (r.token) Api.setSession(r.token, Api.user);
@@ -633,12 +713,17 @@
           const np = await UI.promptBox(`Kata sandi baru untuk ${g.nama} (min. 6 karakter):`, '', { title: 'Atur ulang kata sandi' });
           if (!np) return;
           if (np.length < 6) { UI.toast('Minimal 6 karakter.', 'err'); return; }
+          const done = UI.busy(pw);
           await this.act('gSaveGuru', { id: g.id, password: np }, 'Kata sandi diatur ulang.');
+          done();
         });
         const del = tr.querySelector('[data-a=del]');
         if (del) del.addEventListener('click', async () => {
           if (!(await UI.confirmBox(`Hapus akun guru ${g.nama}?`, { ok: 'Hapus', danger: true }))) return;
-          if (await this.act('gDeleteGuru', { id: g.id }, 'Akun guru dihapus.')) this.renderGuruList();
+          const done = UI.busy(del);
+          const r2 = await this.act('gDeleteGuru', { id: g.id }, 'Akun guru dihapus.');
+          done();
+          if (r2) this.renderGuruList();
         });
       });
     },

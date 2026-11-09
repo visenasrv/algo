@@ -5,6 +5,8 @@
    - Baca dalam satu putaran digabung jadi 1 panggilan "batch"
    - Pengukur waktu: Perf.table() / Perf.summary() di Console
    - Kemajuan misi yang gagal terkirim disimpan dulu (outbox)
+   - v1.2: batas waktu + coba ulang otomatis; setiap tulis membawa
+     reqId sehingga aman diulang (server tidak menyimpan dobel)
    ========================================================= */
 (function (global) {
   'use strict';
@@ -39,22 +41,55 @@
     return /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec/.test(u) && !/XXXX/.test(u);
   }
 
-  async function rawCall(action, data) {
-    const body = JSON.stringify({ action, token, data: data || {}, v: C.APP_VERSION });
-    const t0 = performance.now();
-    let res;
+  function newReqId() {
+    try { if (global.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* abaikan */ }
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function waitOnline(ms) {
+    return new Promise(r => {
+      if (navigator.onLine !== false) return r();
+      const done = () => { clearTimeout(t); global.removeEventListener('online', done); r(); };
+      const t = setTimeout(done, ms);
+      global.addEventListener('online', done);
+    });
+  }
+
+  // satu kali kirim, dengan batas waktu
+  async function sendOnce(action, data, reqId, timeout) {
+    const body = JSON.stringify({ action, token, data: data || {}, reqId: reqId || undefined, v: C.APP_VERSION });
+    if (C.GAS_URL === 'demo' && global.AlgoDemo) {
+      try { return JSON.parse(await global.AlgoDemo.exec(body)); } catch (e) { return { success: false, message: 'Mode demo gagal: ' + e.message }; }
+    }
+    const ctrl = global.AbortController ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null;
     try {
-      if (C.GAS_URL === 'demo' && global.AlgoDemo) {
-        res = JSON.parse(await global.AlgoDemo.exec(body));
-      } else {
-        const r = await fetch(C.GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, redirect: 'follow' });
-        const txt = await r.text();
-        try { res = JSON.parse(txt); } catch (e) { res = { success: false, message: 'Server membalas dengan format yang tidak dikenal. Pastikan Deploy diatur "Siapa saja" (Anyone).' }; }
+      const r = await fetch(C.GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, redirect: 'follow', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+      const txt = await r.text();
+      try { return JSON.parse(txt); } catch (e) {
+        return { success: false, retryable: r.status >= 500 || r.status === 429, message: r.status >= 500 ? 'Server Google sedang bermasalah. Coba lagi sebentar.' : 'Server membalas dengan format yang tidak dikenal. Pastikan Deploy diatur "Siapa saja" (Anyone).' };
       }
     } catch (e) {
-      res = { success: false, offline: true, message: 'Tidak bisa terhubung ke server. Periksa koneksi internet.' };
+      const slow = e && e.name === 'AbortError';
+      return { success: false, offline: true, retryable: true, message: slow ? 'Server terlalu lama menjawab. Periksa koneksi lalu coba lagi.' : 'Tidak bisa terhubung ke server. Periksa koneksi internet.' };
+    } finally { if (timer) clearTimeout(timer); }
+  }
+
+  // baca: sampai 3 kali; tulis: 2 kali dengan reqId yang sama (server mengenali ulangan)
+  async function rawCall(action, data, opt) {
+    opt = opt || {};
+    const isRead = READ.test(action) || action === 'batch';
+    const reqId = isRead ? '' : (opt.reqId || newReqId());
+    const tries = opt.tries || (isRead ? 3 : 2);
+    const t0 = performance.now();
+    let res, n = 0;
+    for (let i = 0; i < tries; i++) {
+      if (i) { await sleep(900 * i); if (navigator.onLine === false) await waitOnline(15000); }
+      n++;
+      res = await sendOnce(action, data, reqId, isRead ? (i ? 40000 : 25000) : 90000);
+      if (res && (res.success || !(res.retryable || res.retry))) break;
     }
-    Perf.add({ action, total: Math.round(performance.now() - t0), server: res && res.ms, cached: !!(res && res.cached), ok: !!(res && res.success) });
+    Perf.add({ action, total: Math.round(performance.now() - t0), server: res && res.ms, cached: !!(res && res.cached), ok: !!(res && res.success), coba: n });
     if (res && res.code === 'AUTH') {
       Api.clearSession();
       if (Api.onAuthLost) Api.onAuthLost(res.message);
@@ -63,8 +98,8 @@
     return res;
   }
 
-  function call(action, data) {
-    if (!READ.test(action)) { _writeEpoch++; return rawCall(action, data); }
+  function call(action, data, opt) {
+    if (!READ.test(action)) { _writeEpoch++; return rawCall(action, data, opt); }
     const k = _writeEpoch + '|' + action + '|' + token + '|' + JSON.stringify(data || {});
     if (_inflight[k]) return _inflight[k];
     const p = rawCall(action, data);
@@ -108,7 +143,7 @@
     key: 'algo_outbox',
     list() { try { return JSON.parse(localStorage.getItem(this.key) || '[]'); } catch (e) { return []; } },
     save(l) { try { localStorage.setItem(this.key, JSON.stringify(l.slice(-40))); } catch (e) { /* abaikan */ } },
-    push(item) { const l = this.list().filter(x => !(x.action === item.action && x.data && item.data && x.data.misiId === item.data.misiId && x.uid === item.uid)); l.push(item); this.save(l); },
+    push(item) { item.reqId = item.reqId || newReqId(); const l = this.list().filter(x => !(x.action === item.action && x.data && item.data && x.data.misiId === item.data.misiId && x.uid === item.uid)); l.push(item); this.save(l); },
     _t: null,
     flushSoon() { if (this._busy || !this.list().length) return; clearTimeout(this._t); this._t = setTimeout(() => this.flush(), 800); },
     async flush() {
@@ -119,7 +154,7 @@
       try {
         const rest = [];
         for (const it of l) {
-          const r = await rawCall(it.action, it.data);
+          const r = await rawCall(it.action, it.data, { reqId: it.reqId, tries: 1 });
           if (!(r && r.success) && r && r.offline) rest.push(it);
         }
         this.save(this.list().filter(x => x.uid !== (user && user.id)).concat(rest));
@@ -159,8 +194,9 @@
     q(action, data) { return Batcher.add(action, data); },
     warm,
     async saveProgress(data) {
-      const r = await call('saveProgress', data);
-      if (r && r.offline) Outbox.push({ action: 'saveProgress', data, uid: user && user.id });
+      const reqId = newReqId();
+      const r = await call('saveProgress', data, { reqId });
+      if (r && r.offline) Outbox.push({ action: 'saveProgress', data, uid: user && user.id, reqId });
       return r;
     },
     onAuthLost: null

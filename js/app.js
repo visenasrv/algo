@@ -9,6 +9,7 @@
   const Assets = global.AlgoAssets;
   const Editor = global.AlgoEditor;
   const esc = UI.esc;
+  const FRESH_MS = 60000;   // data dianggap segar 60 detik → pindah menu tidak memanggil server
 
   // Logo Algo: huruf A dengan palang ▶ (tombol Jalankan). ICON = ikon aplikasi, LOCKUP = logo + tulisan.
   const ICON = `<svg class="algo-icon" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="algoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5A6CEB"/><stop offset="1" stop-color="#3442BE"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#algoG)"/><path d="M162.4 268.0 L325.6 324 L162.4 380.0 Z" fill="#FFB020" stroke="#FFB020" stroke-width="20" stroke-linejoin="round"/><path d="M104 412 L256 106 L408 412" fill="none" stroke="#fff" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -36,6 +37,41 @@
     },
     _meta(p) { return { id: p.id, judul: p.judul, diperbarui: p.diperbarui, pratinjau: p.pratinjau, tugasId: '' }; },
 
+    _ck() { return 'algo_me_' + (Api.user && Api.user.id); },
+
+    // tampilkan dulu data yang tersimpan di perangkat (tanpa menunggu server)
+    hydrate() {
+      if (App.role === 'tamu') { if (!this.me) this.loadGuest(); return true; }
+      if (this.me) return true;
+      const cached = this.readJSON(this._ck(), null);
+      if (cached && cached.siswa) { this.applyMe(cached); this._loadedAt = Number(cached._t) || 0; return true; }
+      return false;
+    },
+    fresh() { return App.role === 'tamu' || (this.me && Date.now() - this._loadedAt < FRESH_MS); },
+
+    // salinan di perangkat ikut diperbarui setelah simpan (buka berikutnya langsung benar)
+    _persist() {
+      if (App.role === 'tamu') return;
+      const cached = this.readJSON(this._ck(), null);
+      if (!cached) return;
+      cached.progres = Object.values(this.progress); cached.proyek = this.projects; cached.tugas = this.tugas;
+      try { localStorage.setItem(this._ck(), JSON.stringify(cached)); } catch (e) { /* penuh: abaikan */ }
+    },
+
+    // ---------- salinan isi proyek di perangkat (maks. 6 proyek terakhir) ----------
+    _pcKey(id) { return 'algo_pc_' + (Api.user && Api.user.id) + '_' + id; },
+    _pcGet(id) { return this.readJSON(this._pcKey(id), null); },
+    _pcPut(id, at, text) {
+      const ik = 'algo_pc_idx_' + (Api.user && Api.user.id);
+      let idx = this.readJSON(ik, []).filter(x => x !== id);
+      idx.unshift(id);
+      idx.slice(6).forEach(x => { try { localStorage.removeItem(this._pcKey(x)); } catch (e) { /* abaikan */ } });
+      idx = idx.slice(0, 6);
+      try { localStorage.setItem(this._pcKey(id), JSON.stringify({ d: at, t: text })); localStorage.setItem(ik, JSON.stringify(idx)); }
+      catch (e) { idx.forEach(x => { try { localStorage.removeItem(this._pcKey(x)); } catch (e2) { /* abaikan */ } }); try { localStorage.removeItem(ik); } catch (e3) { /* abaikan */ } }
+    },
+    _pcDel(id) { try { localStorage.removeItem(this._pcKey(id)); } catch (e) { /* abaikan */ } },
+
     applyMe(r) {
       this.me = r.siswa;
       this.settings = r.settings || {};
@@ -48,17 +84,14 @@
 
     async loadMe(force) {
       if (App.role === 'tamu') { this.loadGuest(); return true; }
-      const ck = 'algo_me_' + (Api.user && Api.user.id);
-      if (!this.me) {
-        const cached = this.readJSON(ck, null);
-        if (cached) this.applyMe(cached);
-      }
-      if (!force && this.me && Date.now() - this._loadedAt < 20000) return true;
+      this.hydrate();
+      if (!force && this.fresh()) return true;
       const r = await Api.q('me');
       if (r && r.success) {
         this.applyMe(r);
         this._loadedAt = Date.now();
-        this.writeJSON(ck, r);
+        r._t = this._loadedAt;
+        try { localStorage.setItem(this._ck(), JSON.stringify(r)); } catch (e) { /* penuh: tetap jalan */ }
         return true;
       }
       if (!this.me) { UI.toast((r && r.message) || 'Gagal memuat data.', 'err'); return false; }
@@ -85,9 +118,7 @@
         diperbarui: new Date().toISOString()
       };
       if (App.role === 'tamu') { this.writeJSON(this.guestKey('progress'), this.progress); return; }
-      const ck = 'algo_me_' + (Api.user && Api.user.id);
-      const cached = this.readJSON(ck, null);
-      if (cached) { cached.progres = Object.values(this.progress); this.writeJSON(ck, cached); }
+      this._persist();
       const res = await Api.saveProgress({ misiId: r.misiId, bintang: r.bintang, jumlahBlok: r.jumlahBlok, percobaan: r.percobaan || 1, solusi: JSON.stringify(r.solusi) });
       if (!res || !res.success) UI.toast(res && res.offline ? 'Kemajuan disimpan di perangkat dan akan dikirim saat internet tersambung.' : ((res && res.message) || 'Kemajuan gagal dikirim.'), res && res.offline ? 'info' : 'err', 4200);
     },
@@ -98,9 +129,17 @@
         const p = this.readJSON(this.guestKey('projects'), []).find(x => x.id === id);
         return p ? { meta: this._meta(p), data: p.data } : null;
       }
+      // salinan di perangkat masih sama dengan versi terakhir di server → buka seketika
+      const meta = this.projects.find(x => x.id === id);
+      const c = this._pcGet(id);
+      if (c && meta && c.d && c.d === meta.diperbarui) {
+        let data = null; try { data = JSON.parse(c.t); } catch (e) { data = null; }
+        if (data) return { meta, data, fromCache: true };
+      }
       const r = await Api.call('getProject', { id });
       if (!r || !r.success) { UI.toast((r && r.message) || 'Proyek tidak ditemukan.', 'err'); return null; }
       let data = null; try { data = JSON.parse(r.data); } catch (e) { data = null; }
+      if (data) this._pcPut(id, r.proyek.diperbarui, r.data);
       return { meta: r.proyek, data };
     },
 
@@ -121,6 +160,8 @@
       if (!r || !r.success) return { ok: false, msg: (r && r.message) || 'Gagal menyimpan.' };
       const i = this.projects.findIndex(x => x.id === r.proyek.id);
       if (i >= 0) this.projects[i] = r.proyek; else this.projects.unshift(r.proyek);
+      this._pcPut(r.proyek.id, r.proyek.diperbarui, text);
+      this._persist();
       return { ok: true, id: r.proyek.id, diperbarui: r.proyek.diperbarui };
     },
 
@@ -134,6 +175,7 @@
       const r = await Api.call('deleteProject', { id });
       if (!r || !r.success) { UI.toast((r && r.message) || 'Gagal menghapus.', 'err'); return false; }
       this.projects = this.projects.filter(x => x.id !== id);
+      this._pcDel(id); this._persist();
       return true;
     }
   };
@@ -150,12 +192,14 @@
       if (Api.token && Api.user) this.role = Api.user.role === 'g' ? 'guru' : 'siswa';
       else if (localStorage.getItem('algo_guest') === '1') this.role = 'tamu';
       else this.role = null;
-      Api.onAuthLost = (msg) => { UI.toast(msg || 'Sesi berakhir. Silakan masuk lagi.', 'err', 4000); this.role = null; Store.me = null; location.hash = '#/masuk'; };
+      Api.onAuthLost = (msg) => { UI.toast(msg || 'Sesi berakhir. Silakan masuk lagi.', 'err', 4000); this.role = null; Store.me = null; this._forgetGuru(); location.hash = '#/masuk'; };
       Assets.preload();
       window.addEventListener('hashchange', () => this.route());
       if (Api.configured()) this.refreshInfo();
       this.route();
     },
+
+    _forgetGuru() { const G = global.AlgoGuru; if (G) { G.data = null; G._at = 0; G.progress = {}; G.subs = {}; } },
 
     async refreshInfo() {
       const r = await Api.q('info');
@@ -185,13 +229,27 @@
         return global.AlgoGuru.route(this.view, p.slice(1), this);
       }
       if (page === 'guru') { location.replace('#/beranda'); return; }
-      await Store.loadMe();
+      if (!Store.hydrate()) {
+        // pertama kali di perangkat ini: belum ada salinan, tunggu server sekali
+        this.view.innerHTML = '<div class="page-loading ed-loading"><i class="spin" aria-hidden="true"></i> Memuat data…</div>';
+        await Store.loadMe(true);
+        if (this.parts()[0] !== p[0] || this.parts()[1] !== p[1]) return;
+      }
+      if (!editorRoute) this.idlePreload();
       switch (page) {
         case 'misi': return p[1] ? this.openMission(+p[1]) : this.pageMap();
         case 'kreasi': return p[1] ? this.openProject(p[1], p[2]) : this.pageKreasi();
         case 'tugas': return this.pageTugas();
         default: return this.pageHome();
       }
+    },
+
+    // pustaka blok dipramuat setelah halaman tampil (membuka misi jadi instan)
+    idlePreload() {
+      if (this._pre || Editor.ready) return;
+      this._pre = true;
+      const run = () => Editor.preload();
+      if (global.requestIdleCallback) global.requestIdleCallback(run, { timeout: 3500 }); else setTimeout(run, 1200);
     },
 
     // ---------- kerangka halaman ----------
@@ -218,7 +276,7 @@
           <main class="page">${html}</main>
         </div>`;
       const gl = this.view.querySelector('.go-login');
-      if (gl) gl.addEventListener('click', () => { localStorage.removeItem('algo_guest'); this.role = null; location.hash = '#/masuk'; });
+      if (gl) gl.addEventListener('click', () => { localStorage.removeItem('algo_guest'); this.role = null; Store.me = null; location.hash = '#/masuk'; });
       const uc = this.view.querySelector('.user-chip');
       if (uc) uc.addEventListener('click', () => this.accountMenu());
       window.scrollTo(0, 0);
@@ -238,7 +296,8 @@
       Api.clearSession();
       localStorage.removeItem('algo_guest');
       Object.keys(localStorage).filter(k => /^algo_(me_|guru_boot)/.test(k)).forEach(k => localStorage.removeItem(k));
-      Store.me = null; Store.progress = {}; Store.projects = []; Store.tugas = [];
+      Store.me = null; Store.progress = {}; Store.projects = []; Store.tugas = []; Store._loadedAt = 0;
+      this._forgetGuru();
       this.role = null;
       location.hash = '#/masuk';
     },
@@ -302,6 +361,7 @@
         Store.loadGuest();
         location.hash = '#/beranda';
       }));
+      this.idlePreload();
       if (!ok) return;
       Api.warm('pub');
       let role = 's';
@@ -329,16 +389,16 @@
         const err = v.querySelector('.form-err');
         if (!u || !pw) { err.textContent = 'Isi nama pengguna dan ' + (role === 's' ? 'PIN' : 'kata sandi') + '.'; err.classList.remove('hidden'); return; }
         const btn = f.querySelector('button[type=submit]');
-        btn.disabled = true; btn.textContent = 'Memeriksa…';
+        const done = UI.busy(btn, 'Memeriksa…');
         const r = await Api.call('login', { role, username: u, password: pw });
-        btn.disabled = false; btn.textContent = 'Masuk';
+        done();
         if (!r || !r.success) { err.textContent = (r && r.message) || 'Gagal masuk.'; err.classList.remove('hidden'); return; }
         localStorage.removeItem('algo_guest');
         Api.setSession(r.token, r.user);
         this.role = r.user.role === 'g' ? 'guru' : 'siswa';
         Store.me = null;
-        if (this.role === 'siswa' && r.boot) { Store.applyMe(r.boot); Store._loadedAt = Date.now(); Store.writeJSON('algo_me_' + r.user.id, r.boot); }
-        if (this.role === 'guru' && r.boot) { localStorage.setItem('algo_guru_boot', JSON.stringify(r.boot)); }
+        if (this.role === 'siswa' && r.boot) { Store.applyMe(r.boot); Store._loadedAt = Date.now(); r.boot._t = Store._loadedAt; Store.writeJSON('algo_me_' + r.user.id, r.boot); }
+        if (this.role === 'guru' && r.boot) { r.boot._t = Date.now(); r.boot.v = r.v; global.AlgoGuru.setData(r.boot); }
         location.hash = this.role === 'guru' ? '#/guru' : '#/beranda';
       });
     },
@@ -381,10 +441,11 @@
     },
 
     _refreshInBackground(page) {
-      const before = JSON.stringify([Store.progress, Store.tugas, Store.projects]);
+      if (Store.fresh()) return; // baru saja dimuat → tidak perlu ke server
+      const snap = () => JSON.stringify([Store.me, Store.progress, Store.tugas, Store.projects, Store.settings]);
+      const before = snap();
       Store.loadMe(true).then(() => {
-        const after = JSON.stringify([Store.progress, Store.tugas, Store.projects]);
-        if (after !== before && (this.parts()[0] || 'beranda') === page && !this.parts()[1]) this.route();
+        if (snap() !== before && (this.parts()[0] || 'beranda') === page && !this.parts()[1] && !UI.topModal()) this.route();
       });
     },
 
@@ -422,7 +483,7 @@
       if (typeof sol === 'string') { try { sol = JSON.parse(sol); } catch (e) { sol = null; } }
       this.view.innerHTML = '<div class="editor-host"></div>';
       Editor.open(this.view.firstChild, {
-        mode: 'misi', mission: m, solution: sol || null,
+        mode: 'misi', mission: m, solution: sol || null, solutionAt: p && p.diperbarui,
         userKey: Api.user ? Api.user.id : 'tamu',
         onExit: () => { location.hash = '#/misi'; },
         onNext: (n) => { location.hash = '#/misi/' + n; },
@@ -472,7 +533,10 @@
         const p = Store.projects.find(x => x.id === id);
         const ok = await UI.confirmBox(`Hapus proyek "${p ? p.judul : ''}"? Tindakan ini tidak bisa dibatalkan.`, { ok: 'Hapus', danger: true });
         if (!ok) return;
-        if (await Store.deleteProject(id)) { card.remove(); UI.toast('Proyek dihapus.', 'ok'); }
+        const done = UI.busy(b);
+        const del = await Store.deleteProject(id);
+        done();
+        if (del) { card.remove(); UI.toast('Proyek dihapus.', 'ok'); }
       }));
     },
 
@@ -489,21 +553,23 @@
         tugas = Store.tugas.find(x => x.id === extra);
         if (!tugas) { UI.toast('Tugas tidak ditemukan.', 'err'); location.replace('#/tugas'); return; }
         if (tugas.proyek && tugas.proyek.id) {
-          this.view.innerHTML = '<div class="page-loading">Memuat proyek…</div>';
+          this.view.innerHTML = '<div class="page-loading ed-loading"><i class="spin" aria-hidden="true"></i> Memuat proyek…</div>';
           const r = await Store.getProject(tugas.proyek.id);
           if (!r) { location.replace('#/tugas'); return; }
           meta = r.meta; data = r.data; savedAt = r.meta.diperbarui;
+          if (r.fromCache) this._checkNewer(meta.id, savedAt);
         } else {
           data = AM.TEMPLATES[0].buat();
           data.name = tugas.judul;
           meta = { id: '', tugasId: tugas.id };
         }
       } else {
-        this.view.innerHTML = '<div class="page-loading">Memuat proyek…</div>';
+        this.view.innerHTML = '<div class="page-loading ed-loading"><i class="spin" aria-hidden="true"></i> Memuat proyek…</div>';
         const r = await Store.getProject(id);
         if (!r || !Editor.validProject(r.data)) { UI.toast('Proyek tidak bisa dibuka.', 'err'); location.replace('#/kreasi'); return; }
         meta = r.meta; data = r.data; savedAt = r.meta.diperbarui;
         if (meta.tugasId) tugas = Store.tugas.find(x => x.id === meta.tugasId) || null;
+        if (r.fromCache) this._checkNewer(id, savedAt);
       }
       if (!this.parts()[1]) return; // pengguna sudah pindah halaman
       this.view.innerHTML = '<div class="editor-host"></div>';
@@ -532,6 +598,20 @@
           } else UI.toast((r && r.message) || 'Gagal mengumpulkan.', 'err');
         },
         onExit: () => { location.hash = back; }
+      });
+    },
+
+    // proyek dibuka dari salinan perangkat: pastikan tidak ada versi lebih baru (mis. disimpan di HP lain)
+    _checkNewer(id, at) {
+      if (App.role === 'tamu' || Store.fresh()) return;
+      Store.loadMe(true).then(() => {
+        const m = Store.projects.find(x => x.id === id);
+        if (!m || m.diperbarui === at) return;
+        const ed = Editor.current;
+        const here = this.parts()[1] === id || (this.parts()[1] === 'tugas' && m.tugasId === this.parts()[2]);
+        if (!here) return;
+        if (ed && !ed.dirty) { UI.toast('Versi terbaru proyek ini dimuat.', 'info'); this.route(); }
+        else UI.toast('Proyek ini baru saja diubah di perangkat lain. Simpan akan menimpa versi itu.', 'info', 5000);
       });
     },
 
@@ -568,7 +648,7 @@
     }
   };
 
-  global.ALGO_BUILD = '1.1.0';
+  global.ALGO_BUILD = '1.2.0';
   global.AlgoApp = App;
   global.AlgoStore = Store;
   global.AlgoLogo = LOCKUP;
