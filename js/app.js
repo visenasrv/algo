@@ -306,6 +306,7 @@
     pageLogin() {
       const ok = Api.configured();
       const info = this.info || {};
+      const demo = global.ALGO_DEMO_NOTE;
       this.view.innerHTML = `
         <div class="login-page">
           <div class="login-card">
@@ -317,16 +318,24 @@
                 <button type="button" role="tab" data-r="s" class="on" aria-selected="true">Saya Siswa</button>
                 <button type="button" role="tab" data-r="g" aria-selected="false">Saya Guru</button>
               </div>
-              ${global.ALGO_DEMO_NOTE ? `<div class="demo-note">
+              ${demo ? `<div class="demo-note">
                 <b>Mode demo</b> — data contoh, tersimpan di perangkat ini saja.
-                <div class="demo-cred"><span>Siswa: <code>${esc(global.ALGO_DEMO_NOTE.siswa.u)}</code> / <code>${esc(global.ALGO_DEMO_NOTE.siswa.p)}</code></span><span>Guru: <code>${esc(global.ALGO_DEMO_NOTE.guru.u)}</code> / <code>${esc(global.ALGO_DEMO_NOTE.guru.p)}</code></span></div>
+                <div class="demo-cred"><span>Siswa: kelas <code>${esc(demo.siswa.kelas)}</code> · <code>${esc(demo.siswa.nama)}</code> · NISN <code>${esc(demo.siswa.p)}</code></span><span>Guru: <code>${esc(demo.guru.u)}</code> / <code>${esc(demo.guru.p)}</code></span></div>
                 <div class="demo-act"><button type="button" class="btn btn-sm btn-ghost demo-fill">Isi otomatis</button><button type="button" class="link demo-reset">Atur ulang data demo</button></div>
               </div>` : ''}
               <form class="login-form" novalidate>
-                <label class="field"><span>Nama pengguna</span><input class="input" name="u" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="contoh: 7a-sari"></label>
-                <label class="field"><span class="pl">PIN</span><input class="input" name="p" type="password" inputmode="numeric" autocomplete="current-password" required placeholder="4 angka dari guru"></label>
+                <div class="pick">
+                  <label class="field"><span>Kelas</span><select class="input" name="kelas"><option value="">Memuat daftar kelas…</option></select></label>
+                  <label class="field"><span>Nama</span><select class="input" name="sid" disabled><option value="">— Pilih kelas dulu —</option></select></label>
+                </div>
+                <label class="field f-user hidden"><span>Nama pengguna</span><input class="input" name="u" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="contoh: 7a-sari"></label>
+                <label class="field"><span class="pl">NISN</span>
+                  <span class="pw-wrap"><input class="input" name="p" type="password" inputmode="numeric" autocomplete="current-password" placeholder="10 angka NISN" maxlength="12"><button type="button" class="pw-eye" aria-label="Tampilkan" title="Tampilkan">👁</button></span>
+                  <small class="muted f-hint">Belum punya NISN di Algo? Isi PIN dari gurumu.</small>
+                </label>
                 <div class="form-err hidden" role="alert"></div>
                 <button type="submit" class="btn btn-primary btn-block btn-lg">Masuk</button>
+                <button type="button" class="link mode-switch hidden">Namamu tidak ada? Masuk dengan nama pengguna</button>
               </form>
               <button type="button" class="link guest-link ${info.izinkanTamu === false ? 'hidden' : ''}">Coba dulu tanpa akun →</button>
             ` : `
@@ -364,35 +373,115 @@
       this.idlePreload();
       if (!ok) return;
       Api.warm('pub');
+
+      const f = v.querySelector('.login-form');
+      const selK = f.kelas, selS = f.sid, pw = f.p;
+      const err = v.querySelector('.form-err');
+      const showErr = (m) => { err.textContent = m; err.classList.toggle('hidden', !m); };
       let role = 's';
+      let typed = false;      // siswa mengetik nama pengguna (bila daftar nama dimatikan / namanya tidak ada)
+      let daftar = null;      // {aktif, kelas:[{id, nama, siswa:[{id, nama}]}]}
+
+      // tampilan formulir sesuai peran & cara masuk
+      const mode = () => {
+        const pick = role === 's' && !typed && daftar && daftar.aktif !== false;
+        v.querySelector('.pick').classList.toggle('hidden', !pick);
+        v.querySelector('.f-user').classList.toggle('hidden', pick);
+        v.querySelector('.pl').textContent = role === 's' ? (pick ? 'NISN' : 'NISN (atau PIN)') : 'Kata sandi';
+        pw.setAttribute('inputmode', role === 's' ? 'numeric' : 'text');
+        pw.placeholder = role === 's' ? '10 angka NISN' : 'kata sandi guru';
+        f.u.placeholder = role === 's' ? 'contoh: 7a-sari' : 'contoh: guru';
+        v.querySelector('.f-hint').classList.toggle('hidden', role !== 's');
+        const sw = v.querySelector('.mode-switch');
+        sw.classList.toggle('hidden', role !== 's' || !daftar || daftar.aktif === false);
+        sw.textContent = typed ? '← Pilih kelas & nama dari daftar' : 'Namamu tidak ada? Masuk dengan nama pengguna';
+      };
+
+      // isi pilihan kelas & nama (pilihan sebelumnya dipertahankan)
+      const fillKelas = () => {
+        const list = (daftar && daftar.kelas) || [];
+        const keep = selK.value || (() => { try { return localStorage.getItem('algo_last_kelas') || ''; } catch (e) { return ''; } })();
+        selK.innerHTML = '<option value="">— Pilih kelasmu —</option>' + list.map(k => `<option value="${esc(k.id)}">${esc(k.nama)}</option>`).join('');
+        if (list.some(k => k.id === keep)) selK.value = keep;
+        fillNama();
+      };
+      const fillNama = () => {
+        const k = ((daftar && daftar.kelas) || []).find(x => x.id === selK.value);
+        const keep = selS.value;
+        selS.disabled = !k;
+        selS.innerHTML = k ? '<option value="">— Pilih namamu —</option>' + k.siswa.map(x => `<option value="${esc(x.id)}">${esc(x.nama)}</option>`).join('')
+          : '<option value="">— Pilih kelas dulu —</option>';
+        if (k && k.siswa.some(x => x.id === keep)) selS.value = keep;
+      };
+      selK.addEventListener('change', () => { showErr(''); fillNama(); try { localStorage.setItem('algo_last_kelas', selK.value); } catch (e) { /* abaikan */ } if (selK.value) selS.focus(); });
+      selS.addEventListener('change', () => { showErr(''); if (selS.value) pw.focus(); });
+
+      // daftar kelas & nama: tampil seketika dari salinan perangkat, lalu diperbarui dari server
+      try { const c = JSON.parse(localStorage.getItem('algo_daftar') || 'null'); if (c && c.kelas) daftar = c; } catch (e) { daftar = null; }
+      if (daftar) fillKelas();
+      mode();
+      const loading = Api.q('daftarMasuk').then(r => {
+        if (!v.contains(f)) return;
+        if (r && r.success) {
+          daftar = { aktif: r.aktif, kelas: r.kelas };
+          try { localStorage.setItem('algo_daftar', JSON.stringify(daftar)); } catch (e) { /* abaikan */ }
+          fillKelas();
+        } else if (!daftar) {
+          typed = true;  // daftar tidak bisa dimuat → tetap bisa masuk dengan nama pengguna
+          selK.innerHTML = '<option value="">Daftar kelas tidak bisa dimuat</option>';
+          if (r && r.message && /Perintah tidak dikenal/.test(r.message)) daftar = { aktif: false, kelas: [] };
+        }
+        mode();
+      });
+
+      v.querySelector('.mode-switch').addEventListener('click', () => { typed = !typed; showErr(''); mode(); (typed ? f.u : selK).focus(); });
+      v.querySelector('.pw-eye').addEventListener('click', (e) => {
+        const show = pw.type === 'password';
+        pw.type = show ? 'text' : 'password';
+        e.currentTarget.textContent = show ? '🙈' : '👁';
+        e.currentTarget.setAttribute('aria-label', show ? 'Sembunyikan' : 'Tampilkan');
+        pw.focus();
+      });
       v.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
         role = b.dataset.r;
         v.querySelectorAll('.tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
-        const pin = v.querySelector('input[name=p]');
-        v.querySelector('.pl').textContent = role === 's' ? 'PIN' : 'Kata sandi';
-        pin.setAttribute('inputmode', role === 's' ? 'numeric' : 'text');
-        pin.placeholder = role === 's' ? '4 angka dari guru' : 'kata sandi guru';
-        v.querySelector('input[name=u]').placeholder = role === 's' ? 'contoh: 7a-sari' : 'contoh: guru';
+        showErr(''); mode();
         if (role === 'g') Api.warm('guru');
       }));
       const df = v.querySelector('.demo-fill');
-      if (df) df.addEventListener('click', () => {
-        const c = role === 's' ? global.ALGO_DEMO_NOTE.siswa : global.ALGO_DEMO_NOTE.guru;
-        v.querySelector('input[name=u]').value = c.u; v.querySelector('input[name=p]').value = c.p;
+      if (df) df.addEventListener('click', async () => {
+        if (role === 'g') { f.u.value = demo.guru.u; pw.value = demo.guru.p; return; }
+        await loading;
+        const k = ((daftar && daftar.kelas) || []).find(x => x.nama === demo.siswa.kelas);
+        if (k && !typed) {
+          selK.value = k.id; fillNama();
+          const s = k.siswa.find(x => x.nama === demo.siswa.nama);
+          if (s) selS.value = s.id;
+        } else f.u.value = demo.siswa.u;
+        pw.value = demo.siswa.p;
       });
       const dr = v.querySelector('.demo-reset');
       if (dr) dr.addEventListener('click', async () => { if (await UI.confirmBox('Hapus semua data demo dan mulai dari data contoh awal?', { ok: 'Atur ulang' })) global.AlgoDemo.reset(); });
-      v.querySelector('.login-form').addEventListener('submit', async (e) => {
+
+      f.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const f = e.target;
-        const u = f.u.value.trim(), pw = f.p.value.trim();
-        const err = v.querySelector('.form-err');
-        if (!u || !pw) { err.textContent = 'Isi nama pengguna dan ' + (role === 's' ? 'PIN' : 'kata sandi') + '.'; err.classList.remove('hidden'); return; }
-        const btn = f.querySelector('button[type=submit]');
-        const done = UI.busy(btn, 'Memeriksa…');
-        const r = await Api.call('login', { role, username: u, password: pw });
+        const pick = role === 's' && !typed && daftar && daftar.aktif !== false;
+        const pass = pw.value.trim();
+        const data = { role, password: pass };
+        if (pick) {
+          if (!selK.value) { showErr('Pilih kelasmu dulu.'); selK.focus(); return; }
+          if (!selS.value) { showErr('Pilih namamu dulu.'); selS.focus(); return; }
+          data.siswaId = selS.value;
+        } else {
+          data.username = f.u.value.trim();
+          if (!data.username) { showErr('Isi nama pengguna.'); f.u.focus(); return; }
+        }
+        if (!pass) { showErr(role === 's' ? 'Isi NISN-mu (10 angka).' : 'Isi kata sandi.'); pw.focus(); return; }
+        showErr('');
+        const done = UI.busy(f.querySelector('button[type=submit]'), 'Memeriksa…');
+        const r = await Api.call('login', data);
         done();
-        if (!r || !r.success) { err.textContent = (r && r.message) || 'Gagal masuk.'; err.classList.remove('hidden'); return; }
+        if (!r || !r.success) { showErr((r && r.message) || 'Gagal masuk.'); return; }
         localStorage.removeItem('algo_guest');
         Api.setSession(r.token, r.user);
         this.role = r.user.role === 'g' ? 'guru' : 'siswa';
@@ -648,7 +737,7 @@
     }
   };
 
-  global.ALGO_BUILD = '1.2.0';
+  global.ALGO_BUILD = '1.3.0';
   global.AlgoApp = App;
   global.AlgoStore = Store;
   global.AlgoLogo = LOCKUP;

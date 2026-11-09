@@ -11,7 +11,7 @@
 (function (global) {
   'use strict';
   const C = global.ALGO_CONFIG || {};
-  const READ = /^(ping|info|me|listProjects|getProject|gBoot|gProgress|gSolution|gProjects|gGetProject|gListGuru)$/;
+  const READ = /^(ping|info|daftarMasuk|me|listProjects|getProject|gBoot|gProgress|gSolution|gProjects|gGetProject|gListGuru)$/;
 
   // ---------- Pengukur ----------
   const Perf = {
@@ -122,9 +122,9 @@
       if (!q || !q.length) return;
       const uniq = []; const map = {};
       q.forEach(it => { const k = it.action + '|' + JSON.stringify(it.data); if (!map[k]) { map[k] = []; uniq.push({ k, action: it.action, data: it.data }); } map[k].push(it.res); });
-      if (uniq.length === 1) {
-        const r = await call(uniq[0].action, uniq[0].data);
-        map[uniq[0].k].forEach(f => f(r));
+      // satu permintaan, atau belum masuk (rute "batch" khusus pengguna yang sudah masuk) → kirim terpisah
+      if (uniq.length === 1 || !token) {
+        await Promise.all(uniq.map(async (u) => { const r = await call(u.action, u.data); map[u.k].forEach(f => f(r)); }));
         return;
       }
       for (let i = 0; i < uniq.length; i += 10) {

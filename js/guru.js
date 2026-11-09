@@ -192,18 +192,20 @@
       const k = this.kelas(kelasId);
       const ss = k ? this.siswaOf(k.id) : [];
       const chips = kelas.map(x => `<a class="kchip ${x.id === kelasId ? 'on' : ''}" href="#/guru/kelas/${esc(x.id)}">${esc(x.nama)} <small>${this.siswaOf(x.id).length}</small></a>`).join('');
+      const noNisn = ss.filter(s => !s.nisn).length;
       const rows = ss.map((s, i) => {
         const sm = this.sum(s.id);
         return `<tr data-id="${esc(s.id)}">
           <td class="num">${i + 1}</td>
           <td><b>${esc(s.nama)}</b></td>
+          <td>${s.nisn ? `<span class="pin" data-pin="${esc(s.nisn)}">••••••••••</span>`
+            : `<span class="nisn-miss" title="Belum ada NISN: siswa ini masuk dengan PIN"><span class="chip chip-warn">belum ada</span> <span class="pin muted small" data-pin="PIN ${esc(s.pin)}">PIN ••••</span></span>`}</td>
           <td><code>${esc(s.username)}</code></td>
-          <td><span class="pin" data-pin="${esc(s.pin)}">••••</span></td>
           <td>${sm.selesai || 0}/${AM.MISSIONS.length} <span class="muted">★${sm.bintang || 0}</span></td>
           <td class="muted small">${esc(UI.fmtRelative(sm.terakhir))}</td>
           <td class="row-act">
             <button type="button" class="icon-btn sm" data-a="edit" title="Ubah" aria-label="Ubah ${esc(s.nama)}">✏️</button>
-            <button type="button" class="icon-btn sm" data-a="pin" title="Buat PIN baru" aria-label="PIN baru ${esc(s.nama)}">🔑</button>
+            <button type="button" class="icon-btn sm" data-a="pin" title="${s.nisn ? 'Keluarkan dari semua perangkat' : 'Buat PIN baru'}" aria-label="${s.nisn ? 'Keluarkan dari semua perangkat' : 'PIN baru'} ${esc(s.nama)}">🔑</button>
             <button type="button" class="icon-btn sm" data-a="del" title="Hapus" aria-label="Hapus ${esc(s.nama)}">🗑️</button>
           </td></tr>`;
       }).join('');
@@ -217,13 +219,14 @@
               <button type="button" class="btn btn-primary btn-sm add-s">＋ Siswa</button>
               <button type="button" class="btn btn-ghost btn-sm imp-s">📋 Tempel dari Excel</button>
               <button type="button" class="btn btn-ghost btn-sm print-s" ${ss.length ? '' : 'disabled'}>🖨️ Cetak kartu masuk</button>
-              <button type="button" class="btn btn-ghost btn-sm show-pin">👁 Tampilkan PIN</button>
+              <button type="button" class="btn btn-ghost btn-sm show-pin">👁 Tampilkan NISN</button>
               <button type="button" class="icon-btn sm edit-k" title="Ubah kelas" aria-label="Ubah kelas">✏️</button>
               <button type="button" class="icon-btn sm del-k" title="Hapus kelas" aria-label="Hapus kelas">🗑️</button>
             </div>
           </div>
-          ${ss.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Nama</th><th>Nama pengguna</th><th>PIN</th><th>Misi</th><th>Terakhir aktif</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-            : '<div class="empty">Kelas ini belum punya siswa. Klik <b>＋ Siswa</b> atau <b>Tempel dari Excel</b>.</div>'}
+          ${ss.length && noNisn ? `<p class="nisn-note">⚠️ <b>${noNisn} siswa belum punya NISN</b> — untuk sementara mereka masuk dengan PIN. Isi lewat ✏️, atau <b>📋 Tempel dari Excel</b> berisi <i>Nama [Tab] NISN</i>: nama yang sudah ada otomatis diisi NISN-nya, tidak menjadi dobel.</p>` : ''}
+          ${ss.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>No</th><th>Nama</th><th>NISN</th><th>Nama pengguna</th><th>Misi</th><th>Terakhir aktif</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+            : '<div class="empty">Kelas ini belum punya siswa. Klik <b>＋ Siswa</b> atau <b>Tempel dari Excel</b> (Nama [Tab] NISN).</div>'}
         </section>` : '<div class="empty">Belum ada kelas. Klik <b>＋ Kelas baru</b> untuk memulai.</div>'}`);
       const v = this.view;
       v.querySelector('.add-k').addEventListener('click', () => this.formKelas());
@@ -243,19 +246,24 @@
       const pr = v.querySelector('.print-s'); if (pr) pr.addEventListener('click', () => this.printCards(k, ss));
       v.querySelector('.show-pin').addEventListener('click', (e) => {
         const on = e.target.dataset.on !== '1'; e.target.dataset.on = on ? '1' : '';
-        e.target.textContent = on ? '🙈 Sembunyikan PIN' : '👁 Tampilkan PIN';
-        v.querySelectorAll('.pin').forEach(p => { p.textContent = on ? p.dataset.pin : '••••'; });
+        e.target.textContent = on ? '🙈 Sembunyikan NISN' : '👁 Tampilkan NISN';
+        v.querySelectorAll('.pin').forEach(p => { p.textContent = on ? p.dataset.pin : (/^PIN/.test(p.dataset.pin) ? 'PIN ••••' : '••••••••••'); });
       });
       v.querySelectorAll('tbody tr').forEach(tr => {
         const s = ss.find(x => x.id === tr.dataset.id);
         tr.querySelector('[data-a=edit]').addEventListener('click', () => this.formSiswa(s, k.id));
         tr.querySelector('[data-a=pin]').addEventListener('click', async (e) => {
           const b = e.currentTarget;
-          if (!(await UI.confirmBox(`Buat PIN baru untuk ${s.nama}? PIN lama tidak berlaku lagi dan ${s.nama} akan keluar dari perangkat lain.`, { ok: 'Buat PIN baru' }))) return;
+          const msg = s.nisn ? `Keluarkan ${s.nama} dari semua perangkat (misalnya HP-nya hilang atau dipinjam teman)? ${s.nama} tetap bisa masuk lagi dengan NISN-nya.`
+            : `Buat PIN baru untuk ${s.nama}? PIN lama tidak berlaku lagi dan ${s.nama} akan keluar dari perangkat lain.`;
+          if (!(await UI.confirmBox(msg, { ok: s.nisn ? 'Keluarkan' : 'Buat PIN baru' }))) return;
           const done = UI.busy(b);
           const r = await this.act('gResetPin', { id: s.id });
           done();
-          if (r) { UI.modal({ title: 'PIN baru', body: `<p>PIN baru untuk <b>${esc(s.nama)}</b>:</p><p class="big-pin">${esc(r.pin)}</p>`, actions: [{ label: 'OK', cls: 'btn-primary' }] }); this.pageKelas(k.id); }
+          if (!r) return;
+          if (s.nisn) UI.toast(`${s.nama} sudah dikeluarkan dari semua perangkat.`, 'ok', 3600);
+          else UI.modal({ title: 'PIN baru', body: `<p>PIN baru untuk <b>${esc(s.nama)}</b>:</p><p class="big-pin">${esc(r.pin)}</p><p class="muted small">Lebih mudah: isi NISN siswa ini (✏️), lalu ia masuk dengan NISN.</p>`, actions: [{ label: 'OK', cls: 'btn-primary' }] });
+          this.pageKelas(k.id);
         });
         tr.querySelector('[data-a=del]').addEventListener('click', async (e) => {
           const b = e.currentTarget;
@@ -294,18 +302,21 @@
         title: s ? 'Ubah siswa' : 'Tambah siswa',
         body: `<form class="form">
           <label class="field"><span>Nama lengkap</span><input class="input" name="nama" maxlength="60" value="${esc(s ? s.nama : '')}" required></label>
-          <label class="field"><span>Nama pengguna <small class="muted">(kosongkan agar dibuat otomatis)</small></span><input class="input" name="username" maxlength="30" value="${esc(s ? s.username : '')}" placeholder="contoh: NIS atau 7a-sari" autocapitalize="none"></label>
+          <label class="field"><span>NISN <small class="muted">(10 angka — dipakai siswa sebagai kata sandi)</small></span><input class="input" name="nisn" inputmode="numeric" maxlength="12" value="${esc(s ? s.nisn || '' : '')}" placeholder="contoh: 0081234567" autocomplete="off"></label>
           <label class="field"><span>Kelas</span><select class="input" name="kelas">${opts}</select></label>
-          ${s ? '' : '<p class="muted small">PIN 4 angka dibuat otomatis.</p>'}
+          <label class="field"><span>Nama pengguna <small class="muted">(opsional; dibuat otomatis)</small></span><input class="input" name="username" maxlength="30" value="${esc(s ? s.username : '')}" placeholder="contoh: 7a-sari" autocapitalize="none"></label>
+          <p class="muted small">Siswa masuk dengan memilih kelas & namanya, lalu mengetik NISN. Bila NISN dikosongkan, siswa masuk dengan PIN yang dibuat otomatis.</p>
         </form>`,
         actions: [{ label: 'Batal' }, {
           label: 'Simpan', cls: 'btn-primary', onClick: async (api, btn) => {
             const f = api.body.querySelector('form');
             const nama = f.nama.value.trim();
             if (!nama) { UI.toast('Nama wajib diisi.', 'err'); return false; }
-            const r = await this.act('gSaveSiswa', { id: s ? s.id : '', nama, username: f.username.value.trim(), kelasId: f.kelas.value }, s ? 'Data siswa disimpan.' : null);
+            const nisn = f.nisn.value.replace(/[\s.\-]/g, '');
+            if (nisn && !/^\d{7,10}$/.test(nisn)) { UI.toast('NISN harus 10 angka.', 'err'); f.nisn.focus(); return false; }
+            const r = await this.act('gSaveSiswa', { id: s ? s.id : '', nama, nisn, username: f.username.value.trim(), kelasId: f.kelas.value }, s ? 'Data siswa disimpan.' : null);
             if (!r) return false;
-            if (!s) UI.modal({ title: 'Siswa ditambahkan', body: `<p><b>${esc(r.siswa.nama)}</b></p><p>Nama pengguna: <code>${esc(r.siswa.username)}</code></p><p>PIN: <b class="big-pin">${esc(r.siswa.pin)}</b></p>`, actions: [{ label: 'OK', cls: 'btn-primary' }] });
+            if (!s) UI.modal({ title: 'Siswa ditambahkan', body: `<p><b>${esc(r.siswa.nama)}</b> · kelas ${esc((this.kelas(f.kelas.value) || {}).nama || '')}</p>${r.siswa.nisn ? `<p>Masuk: pilih kelas & nama, lalu ketik NISN <b>${esc(r.siswa.nisn)}</b>.</p>` : `<p>Belum ada NISN, jadi masuk dengan PIN: <b class="big-pin">${esc(r.siswa.pin)}</b></p>`}`, actions: [{ label: 'OK', cls: 'btn-primary' }] });
             this.pageKelas(f.kelas.value);
           }
         }]
@@ -316,9 +327,10 @@
     importSiswa(k) {
       UI.modal({
         title: 'Tempel daftar siswa — ' + k.nama, wide: true,
-        body: `<p class="muted">Salin kolom dari Excel/Google Sheets lalu tempel di bawah. Satu baris satu siswa.<br>
-          Format: <code>Nama</code> saja, atau <code>Nama [Tab] Nama pengguna/NIS</code>. Pemisah boleh Tab, titik koma, atau koma.</p>
-          <textarea class="input" rows="10" placeholder="Sari Wulandari&#9;24070101&#10;Bima Pratama&#9;24070102&#10;Ayu Lestari"></textarea>
+        body: `<p class="muted">Salin kolom <b>Nama</b> dan <b>NISN</b> dari Excel/Google Sheets (mis. dari Dapodik), lalu tempel di bawah. Satu baris satu siswa.<br>
+          Format: <code>Nama [Tab] NISN</code>. Pemisah boleh Tab, titik koma, atau koma. Angka 0 di depan NISN yang hilang karena Excel dikembalikan otomatis.<br>
+          Nama yang <b>sudah ada</b> di kelas ini tidak ditambah lagi — NISN-nya saja yang diisi.</p>
+          <textarea class="input" rows="10" placeholder="Sari Wulandari&#9;0081234567&#10;Bima Pratama&#9;0081234568&#10;Ayu Lestari&#9;0081234569"></textarea>
           <div class="imp-preview muted small"></div>`,
         actions: [{ label: 'Batal' }, {
           label: 'Tambahkan', cls: 'btn-primary', onClick: async (api, btn) => {
@@ -327,14 +339,23 @@
             if (rows.length > 200) { UI.toast('Maksimal 200 siswa sekali tempel.', 'err'); return false; }
             const r = await this.act('gImportSiswa', { kelasId: k.id, rows }, null);
             if (!r) return false;
-            UI.toast(`${r.ditambah} siswa ditambahkan${r.dilewati ? `, ${r.dilewati} dilewati (nama pengguna sudah dipakai)` : ''}.`, 'ok', 4500);
+            const parts = [r.ditambah + ' siswa ditambahkan'];
+            if (r.diperbarui) parts.push(r.diperbarui + ' NISN diisi');
+            if (r.dilewati) parts.push(r.dilewati + ' dilewati');
+            UI.toast(parts.join(', ') + '.', 'ok', 4500);
+            if (r.catatan && r.catatan.length) UI.modal({ title: 'Baris yang dilewati', body: `<ul class="skip-list">${r.catatan.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`, actions: [{ label: 'OK', cls: 'btn-primary' }] });
             this.pageKelas(k.id);
           }
         }]
       });
       const ta = document.querySelector('.modal textarea');
       const pv = document.querySelector('.imp-preview');
-      ta.addEventListener('input', () => { const n = parseRows(ta.value).length; pv.textContent = n ? n + ' siswa akan ditambahkan.' : ''; });
+      ta.addEventListener('input', () => {
+        const l = parseRows(ta.value), n = l.length, w = l.filter(x => x.nisn).length;
+        const pendek = l.filter(x => x.nisn && x.nisn.length < 10).length;
+        pv.textContent = n ? `${n} siswa terbaca · ${w} dengan NISN${n > w ? ` · ${n - w} tanpa NISN (masuk dengan PIN)` : ''}.`
+          + (pendek ? ` ⚠️ ${pendek} NISN kurang dari 10 angka akan dilengkapi angka 0 di depan — pastikan yang ditempel NISN, bukan NIS.` : '') : '';
+      });
     },
 
     printCards(k, ss) {
@@ -347,8 +368,9 @@
           <div class="pc-head">${global.AlgoLogo}<span>${esc(school)}</span></div>
           <div class="pc-name">${esc(s.nama)}</div>
           <div class="pc-class">Kelas ${esc(k.nama)}</div>
+          <div class="pc-how">Masuk: pilih kelas <b>${esc(k.nama)}</b> → pilih namamu → ketik ${s.nisn ? 'NISN' : 'PIN'}</div>
+          <div class="pc-row"><span>${s.nisn ? 'NISN' : 'PIN'}</span><b>${esc(s.nisn || s.pin)}</b></div>
           <div class="pc-row"><span>Nama pengguna</span><b>${esc(s.username)}</b></div>
-          <div class="pc-row"><span>PIN</span><b>${esc(s.pin)}</b></div>
           <div class="pc-url">${esc(site)}</div>
         </div>`).join('')}</div>`;
       document.body.appendChild(area);
@@ -646,6 +668,7 @@
             <label class="field"><span>Nama sekolah (tampil di halaman masuk)</span><input class="input" name="namaSekolah" maxlength="80" value="${esc(st.namaSekolah || '')}"></label>
             <label class="check"><input type="checkbox" name="bukaSemuaMisi" ${st.bukaSemuaMisi ? 'checked' : ''}> Buka semua misi (siswa tidak perlu menyelesaikan misi secara berurutan)</label>
             <label class="check"><input type="checkbox" name="izinkanTamu" ${st.izinkanTamu !== false ? 'checked' : ''}> Tampilkan tombol “Coba dulu tanpa akun” di halaman masuk</label>
+            <label class="check"><input type="checkbox" name="daftarNama" ${st.daftarNama !== false ? 'checked' : ''}> Siswa masuk dengan <b>memilih kelas & nama</b> dari daftar, lalu mengetik NISN. Bila dimatikan, daftar nama siswa tidak tampil di halaman masuk dan siswa mengetik nama pengguna + NISN.</label>
             <button type="submit" class="btn btn-primary">Simpan pengaturan</button>
           </form>
         </section>
@@ -672,7 +695,7 @@
         const btn = f.querySelector('button[type=submit]');
         if (btn._busy) return;
         const done = UI.busy(btn, 'Menyimpan…');
-        const r = await this.act('gSaveSettings', { namaSekolah: f.namaSekolah.value.trim(), bukaSemuaMisi: f.bukaSemuaMisi.checked, izinkanTamu: f.izinkanTamu.checked }, 'Pengaturan disimpan.');
+        const r = await this.act('gSaveSettings', { namaSekolah: f.namaSekolah.value.trim(), bukaSemuaMisi: f.bukaSemuaMisi.checked, izinkanTamu: f.izinkanTamu.checked, daftarNama: f.daftarNama.checked }, 'Pengaturan disimpan.');
         done(r ? 'Tersimpan' : null); // isian sudah menampilkan nilai baru → tidak perlu menggambar ulang halaman
       });
       v.querySelector('.pw-form').addEventListener('submit', async (e) => {
@@ -749,14 +772,18 @@
     }
   };
 
+  // baris: Nama [Tab] NISN [Tab] nama pengguna (opsional); kolom nomor urut di depan diabaikan
   function parseRows(text) {
+    const isNum = (x) => /^\d[\d\s.\-]*$/.test(x);
     return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
       const parts = l.split(/\t|;|,/).map(x => x.trim()).filter(Boolean);
-      // lewati baris judul
-      if (/^(nama|no)$/i.test(parts[0])) return null;
-      if (/^\d+$/.test(parts[0]) && parts.length > 1 && !/^\d+$/.test(parts[1])) parts.shift(); // kolom nomor urut
-      return { nama: parts[0], username: parts[1] || '' };
-    }).filter(r => r && r.nama);
+      if (!parts.length || /^(nama|no|nisn)\b/i.test(parts[0])) return null; // baris judul
+      if (isNum(parts[0]) && parts.length > 1 && !isNum(parts[1])) parts.shift(); // kolom nomor urut
+      const rest = parts.slice(1);
+      const nisn = rest.find(isNum) || '';
+      const username = rest.find(x => x !== nisn && !isNum(x)) || '';
+      return { nama: parts[0], nisn: nisn.replace(/[\s.\-]/g, ''), username };
+    }).filter(r => r && r.nama && !isNum(r.nama));
   }
   function csvCell(v) { const s = String(v == null ? '' : v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 

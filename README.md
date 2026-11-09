@@ -5,7 +5,8 @@ Aplikasi belajar algoritma dan pemrograman blok **berbahasa Indonesia** untuk si
 - **19 misi bertahap**: urutan, perulangan, kejadian, percabangan, variabel, bercerita (percakapan dua tokoh), dan membuat game (klik bintang, tangkap apel, hindari batu, tebak angka). Ada cerita, petunjuk bertahap, dan bintang ★★★ untuk solusi yang hemat blok.
 - **Mode 🐢 Pelan dan 👣 Langkah**: blok yang sedang dijalankan menyala, sehingga siswa melihat urutan kerja algoritma.
 - **Kreasi bebas**: beberapa tokoh (termasuk Pesut Mahakam dan Enggang), latar, suara, nada Do-Re-Mi, pena, variabel, tanya-jawab.
-- **Panel guru**: kelas, siswa (tempel dari Excel, PIN otomatis, cetak kartu masuk), progres misi per siswa, reset kemajuan siswa/kelas, tugas & penilaian.
+- **Masuk siswa mudah**: pilih kelas → pilih nama → ketik NISN.
+- **Panel guru**: kelas, siswa (tempel Nama + NISN dari Excel, cetak kartu masuk), progres misi per siswa, reset kemajuan siswa/kelas, tugas & penilaian.
 - **Cepat di HP**: halaman tampil dari salinan di perangkat lalu diperbarui di latar; pustaka blok dimuat belakangan; simpanan aman dikirim ulang saat sinyal lemah.
 - **Mode Coba** tanpa akun bila backend belum dipasang.
 

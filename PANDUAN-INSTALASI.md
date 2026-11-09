@@ -200,16 +200,18 @@ Tunggu 1–2 menit, muat ulang halaman. Akan muncul: **Your site is live at `htt
 1. **Ganti kata sandi admin**: menu **⚙️ Pengaturan** → *Kata sandi saya*.
 2. **Isi nama sekolah**: masih di Pengaturan. Nama ini tampil di halaman masuk siswa.
 3. **Buat kelas**: menu **👥 Kelas & Siswa** → **＋ Kelas baru** (misalnya `7A`).
-4. **Tambah siswa**:
-   - Satu per satu: **＋ Siswa**.
-   - Banyak sekaligus: **📋 Tempel dari Excel**. Salin kolom nama (dan NIS bila ada) dari Excel/Google Sheets, lalu tempel. Contoh:
+4. **Tambah siswa beserta NISN-nya** (NISN = kata sandi siswa):
+   - Satu per satu: **＋ Siswa** → isi nama, **NISN**, dan kelas.
+   - Banyak sekaligus: **📋 Tempel dari Excel**. Salin kolom **Nama** dan **NISN** dari Excel/Google Sheets (mis. hasil unduhan Dapodik), lalu tempel. Contoh:
      ```
-     Sari Wulandari	24070101
-     Bima Pratama	24070102
-     Ayu Lestari
+     Sari Wulandari	0081234567
+     Bima Pratama	0081234568
+     Ayu Lestari	0081234569
      ```
-     Jika NIS kosong, nama pengguna dibuat otomatis, misalnya `7a-ayu`. **PIN 4 angka** dibuat otomatis.
-5. **Cetak kartu masuk**: tombol **🖨️ Cetak kartu masuk** mencetak kartu berisi nama pengguna, PIN, dan alamat situs (2 kartu per baris, siap digunting).
+     - Angka 0 di depan NISN yang hilang karena Excel (mis. `81234567`) dikembalikan otomatis menjadi 10 angka.
+     - **Sudah punya siswa dari versi sebelumnya?** Tempel saja daftar *Nama [Tab] NISN* kelas itu. Nama yang sudah ada **tidak ditambah lagi**, hanya NISN-nya yang diisi.
+     - Siswa tanpa NISN tetap bisa masuk dengan **PIN 4 angka** yang dibuat otomatis (ditandai *belum ada* di kolom NISN).
+5. **Cetak kartu masuk**: tombol **🖨️ Cetak kartu masuk** mencetak kartu berisi kelas, nama, NISN (atau PIN bila belum ada NISN), dan alamat situs (2 kartu per baris, siap digunting). Kartu ini membantu siswa yang belum hafal NISN-nya.
 6. **Bagikan alamat situs** ke siswa (grup WhatsApp kelas, papan tulis, atau kode QR).
 7. **Pantau**: menu **🗺️ Progres Misi** menampilkan tabel bintang per siswa per misi. Klik sel untuk melihat **dan menjalankan** solusi siswa. Tombol **⬇️ Unduh CSV** untuk rekap nilai.
    - **Reset kemajuan** (misalnya awal semester baru, atau siswa ingin mengulang): tombol **↺** di ujung baris siswa menghapus semua bintang dan solusi misi siswa itu, lalu ia mulai lagi dari Misi 1. Tombol **↺ Reset kemajuan kelas** melakukan hal yang sama untuk seluruh kelas (Anda diminta mengetik nama kelas sebagai pengaman). Proyek Kreasi dan tugas **tidak** ikut terhapus. Unduh CSV dulu bila ingin menyimpan rekap lama, karena reset tidak bisa dibatalkan.
@@ -223,7 +225,10 @@ Tunggu 1–2 menit, muat ulang halaman. Akan muncul: **Your site is live at `htt
 
 ## Bagian D — Panduan singkat untuk siswa
 
-1. Buka alamat Algo dari guru, pilih **Saya Siswa**, isi **nama pengguna** dan **PIN** dari kartu.
+1. Buka alamat Algo dari guru, pilih **Saya Siswa**, lalu:
+   - pilih **Kelas** → pilih **Nama**-mu dari daftar → ketik **NISN** (10 angka) → **Masuk**. Tekan 👁 untuk melihat angka yang diketik.
+   - Kelas yang terakhir dipilih diingat di perangkat itu.
+   - Belum punya NISN di Algo? Ketik PIN dari guru di kolom NISN. Nama tidak ada di daftar? Tekan *Namamu tidak ada? Masuk dengan nama pengguna*.
 2. **🗺️ Misi**: kerjakan berurutan dari Misi 1. Setiap misi punya tujuan, cerita, dan tombol **💡 Minta petunjuk**.
 3. Cara menyusun program:
    - Seret blok dari kiri, tempel di bawah blok kuning **ketika ▶ Jalankan diklik**. Di Kreasi, daftar blok tetap terbuka setelah blok diambil; pilih kategori lain untuk mengganti isinya, atau tekan **⇤** (pojok kanan atas area kode) untuk menyembunyikannya bila butuh ruang lebih.
@@ -286,18 +291,19 @@ Tunggu 1–2 menit, lalu tekan **Ctrl + Shift + R** di browser.
 
 > ⚠️ Jangan memilih *Deployment baru*. Itu menghasilkan URL `/exec` yang berbeda sehingga `config.js` harus diubah lagi.
 
-**Pembaruan ke versi 1.2 (reset misi, animasi simpan, lebih cepat)** — perlu memperbarui **keduanya**, backend dulu:
+**Pembaruan ke versi 1.3 (masuk siswa dengan kelas, nama, dan NISN)** — sudah termasuk semua isi 1.2 (reset misi, animasi simpan, lebih cepat, gulir & zoom mouse). Perbarui **keduanya**, backend dulu:
 
-1. **Backend**: buka editor Apps Script → hapus seluruh isi `Kode.gs` → tempel `Kode.gs` versi 1.2 → **Simpan** → **Terapkan** → **Kelola deployment** → ✏️ **Edit** → **Versi: Versi baru** → **Terapkan**. Tidak perlu menjalankan `setupAlgo` lagi, dan data lama tidak berubah.
+1. **Backend**: buka editor Apps Script → hapus seluruh isi `Kode.gs` → tempel `Kode.gs` versi 1.3 → **Simpan** → **Terapkan** → **Kelola deployment** → ✏️ **Edit** → **Versi: Versi baru** → **Terapkan**. Tidak perlu menjalankan `setupAlgo`. Kolom **nisn** ditambahkan otomatis di sheet `Siswa` saat Algo pertama kali dipakai; data lama tidak berubah.
 2. **Frontend**: salin isi `algo.zip` baru ke folder repo dan timpa berkas lama. **Sebelum push**, buka `js/config.js` dan isi lagi `GAS_URL` dengan URL `/exec` Anda (di ZIP masih `XXXX`). Lalu:
    ```powershell
    git add .
-   git commit -m "Algo 1.2"
+   git commit -m "Algo 1.3"
    git push
    ```
-3. Cek: buka URL `/exec` di browser, harus tertulis `"v":"1.2.0"`. Lalu buka situs Algo dan tekan **Ctrl + Shift + R**.
+3. Cek: buka URL `/exec` di browser, harus tertulis `"v":"1.3.0"`. Lalu buka situs Algo dan tekan **Ctrl + Shift + R**.
+4. **Isi NISN siswa lama**: Kelas & Siswa → pilih kelas → **📋 Tempel dari Excel** → tempel *Nama [Tab] NISN* → **Tambahkan**. Ulangi untuk tiap kelas. Sampai NISN-nya diisi, siswa lama tetap bisa masuk dengan PIN.
 
-> Perbarui backend lebih dulu. Frontend 1.2 dengan backend lama tetap berjalan, tetapi tombol **↺ Reset kemajuan** di panel guru akan menampilkan *Perintah tidak dikenal* sampai backend diperbarui.
+> Perbarui backend lebih dulu. Dengan backend lama, halaman masuk tidak bisa memuat daftar kelas (siswa otomatis diarahkan ke cara lama: nama pengguna + PIN).
 
 ---
 
@@ -334,8 +340,10 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 **Tentang data siswa**
 
 - Semua data ada di spreadsheet **🗃️ Database — Algo** milik Anda. Jangan bagikan tautan spreadsheet ke siswa.
-- PIN siswa tersimpan sebagai teks agar guru bisa mencetak kartu. PIN hanya untuk masuk ke Algo; jangan gunakan untuk akun lain.
-- **🔑 PIN baru** di menu Kelas & Siswa langsung mengeluarkan siswa dari semua perangkat.
+- **Daftar kelas & nama di halaman masuk** bisa dilihat siapa pun yang membuka alamat situs Algo (hanya nama, tanpa NISN/PIN). Bila sekolah tidak menghendakinya, matikan di **⚙️ Pengaturan** → *Siswa masuk dengan memilih kelas & nama*. Siswa lalu mengetik nama pengguna + NISN.
+- **NISN sebagai kata sandi** memudahkan siswa, tetapi NISN lebih mudah diketahui orang lain dibanding PIN acak. Untuk aplikasi belajar ini risikonya kecil; Algo membatasi 8 kali salah per siswa (lalu tunggu 10 menit).
+- NISN dan PIN tersimpan sebagai teks di sheet `Siswa` agar guru bisa mencetak kartu. Jangan bagikan tautan spreadsheet ke siswa.
+- **🔑** di menu Kelas & Siswa mengeluarkan siswa dari semua perangkat (siswa tanpa NISN sekaligus mendapat PIN baru). Mengganti NISN siswa juga otomatis mengeluarkannya dari perangkat lain.
 - Menghapus siswa tidak menghapus kemajuan dan proyeknya di spreadsheet.
 - **↺ Reset kemajuan** (Progres Misi) menghapus baris progres siswa dari sheet `Progres` secara permanen. Urutan baris di sheet itu ikut diurutkan menurut siswa; ini normal.
 
@@ -350,8 +358,12 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 | *Server membalas dengan format yang tidak dikenal* | Deployment meminta login Google | Ubah **Yang memiliki akses** menjadi **Siapa saja**, lalu deploy versi baru |
 | *Server belum disiapkan. Jalankan setupAlgo()* | `setupAlgo` belum dijalankan | Jalankan langkah A4 |
 | Lupa kata sandi admin | — | Di editor Apps Script pilih fungsi **`resetSandiAdmin`** → Jalankan → lihat kata sandi baru di log |
-| Siswa lupa PIN | — | Kelas & Siswa → **👁 Tampilkan PIN**, atau **🔑** untuk membuat PIN baru |
-| *Terlalu banyak percobaan salah* | Salah PIN/sandi 8 kali | Tunggu 10 menit |
+| Siswa lupa NISN / PIN | — | Kelas & Siswa → **👁 Tampilkan NISN**, atau cetak ulang kartu masuk |
+| *NISN salah* | Salah ketik, atau NISN di Algo berbeda | Cek kolom NISN di Kelas & Siswa; perbaiki lewat ✏️ |
+| *NISN-mu belum dicatat guru* | Kolom NISN siswa masih kosong | Isi NISN (✏️ atau Tempel dari Excel). Sementara itu siswa masuk dengan PIN |
+| Nama siswa tidak muncul di daftar | Siswa belum ditambahkan / dihapus / salah kelas | Periksa di Kelas & Siswa. Siswa juga bisa memakai *Masuk dengan nama pengguna* |
+| Halaman masuk: *Daftar kelas tidak bisa dimuat* | Internet putus, atau backend belum diperbarui ke 1.3 | Periksa koneksi; perbarui backend (Bagian E) |
+| *Terlalu banyak percobaan salah* | Salah NISN/sandi 8 kali | Tunggu 10 menit |
 | Data yang diubah di Sheets tidak muncul | Masih memakai cache | Ringkasan → **🔄 Segarkan data** |
 | Situs GitHub 404 | `index.html` tidak berada di root repository | Lihat isi repo di github.com. Kalau terlihat folder `algo/` atau `frontend/`, ulangi B4 dari folder yang berisi `index.html` |
 | Tampilan berantakan tanpa warna | Folder `css/`/`js/` tidak ikut | Jangan unggah lewat web GitHub; ulangi B4 lewat PowerShell |
@@ -373,7 +385,7 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 
 ---
 
-## Batasan versi 1.2
+## Batasan versi 1.3
 
 - Belum ada editor gambar atau unggah gambar sendiri; tokoh dan latar dipilih dari pustaka bawaan (termasuk Pesut Mahakam dan burung Enggang).
 - Belum ada fitur *klon* dan berbagi karya ke publik.

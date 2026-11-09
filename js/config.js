@@ -7,5 +7,5 @@
    ========================================================= */
 window.ALGO_CONFIG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbyaemjM4PryjfvMnSHYuL1tYOiM6qZOtdchpGxKVbd5wDqKxFh9djlvQIAoYFdYxkzV/exec',
-  APP_VERSION: '1.2.0'
+  APP_VERSION: '1.3.0'
 };
