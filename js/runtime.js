@@ -172,6 +172,16 @@
       this._updateRunning();
     }
     keyUp(k) { this.keys.delete(k); }
+    // apakah ada blok "ketika tombol … ditekan" untuk tombol ini (atau "tombol apa saja")
+    wantsKey(k) {
+      let w = false;
+      this._eachHat(h => {
+        if (w || h.block.type !== 'a_when_key') return;
+        const want = (h.block.fields && h.block.fields.KEY) || 'spasi';
+        if (want === k || want === 'apa') w = true;
+      });
+      return w;
+    }
     releaseKeys() { this.keys.clear(); this._keyPending = []; }
     _keyHeld(want) { return want === 'apa' ? this.keys.size > 0 : this.keys.has(want); }
 

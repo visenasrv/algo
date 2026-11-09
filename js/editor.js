@@ -463,21 +463,34 @@
       this.stage.onKey = (k, down) => this._padKey(k, down);
 
       // keyboard
+      // Tombol untuk permainan (program sedang berjalan, atau ada blok "ketika tombol … ditekan")
+      // ditangkap lebih dulu dan TIDAK diteruskan ke area kode. Tanpa ini, spasi/panah ikut dipakai
+      // navigasi keyboard Blockly (pilihan blok berpindah, area kode bergeser, dan muncul pesan
+      // "Use → to navigate inside of blocks").
+      const gameKey = (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return null; // Ctrl+Z, Ctrl+C, dst. tetap untuk area kode
+        return KEYMAP[e.key] || (e.key && e.key.length === 1 ? e.key.toLowerCase() : null);
+      };
       const kd = (e) => {
         if (!this._keyOk(e)) return;
-        const k = KEYMAP[e.key] || (e.key && e.key.length === 1 ? e.key.toLowerCase() : null);
+        const k = gameKey(e);
         if (!k) return;
-        if (KEYMAP[e.key]) e.preventDefault();
+        if (this.rt.running || this.rt.wantsKey(k)) { e.preventDefault(); e.stopImmediatePropagation(); }
+        else if (KEYMAP[e.key]) e.preventDefault();
         if (e.repeat) return; // Algo mengulang sendiri selama tombol ditahan (lebih mulus)
         this.rt.keyDown(k);
       };
       const ku = (e) => {
         const k = KEYMAP[e.key] || (e.key && e.key.length === 1 ? e.key.toLowerCase() : null);
-        if (k) this.rt.keyUp(k);
+        if (!k) return;
+        const game = this.rt.running || this.rt.wantsKey(k);
+        this.rt.keyUp(k);
+        if (game && this._keyOk(e) && !(e.ctrlKey || e.metaKey || e.altKey)) e.stopImmediatePropagation();
       };
-      document.addEventListener('keydown', kd);
-      document.addEventListener('keyup', ku);
-      this._listeners.push(['keydown', kd], ['keyup', ku]);
+      // fase "capture" di window → berjalan sebelum penangan tombol milik Blockly
+      window.addEventListener('keydown', kd, true);
+      window.addEventListener('keyup', ku, true);
+      this._capListeners = [['keydown', kd], ['keyup', ku]];
       // jendela kehilangan fokus → lepaskan semua tombol agar tokoh tidak terus berjalan
       const lose = () => this.rt.releaseKeys();
       const vis = () => { if (document.hidden) this.rt.releaseKeys(); };
@@ -1086,6 +1099,7 @@
     destroy() {
       clearInterval(this._propTimer);
       this._listeners.forEach(([t, f]) => document.removeEventListener(t, f));
+      (this._capListeners || []).forEach(([t, f]) => window.removeEventListener(t, f, true));
       (this._winListeners || []).forEach(([t, f]) => window.removeEventListener(t, f));
       if (this._changed) this._changed.cancel();
       try { this.rt.destroy(); } catch (e) { /* abaikan */ }

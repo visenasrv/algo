@@ -305,6 +305,8 @@ Tunggu 1–2 menit, lalu tekan **Ctrl + Shift + R** di browser.
 
 > Perbarui backend lebih dulu. Dengan backend lama, halaman masuk tidak bisa memuat daftar kelas (siswa otomatis diarahkan ke cara lama: nama pengguna + PIN).
 
+**Frontend 1.3.1** (perbaikan): spasi/panah saat bermain tidak lagi memunculkan pesan *"Use → to navigate inside of blocks"* atau menggeser pilihan blok. Cukup perbarui frontend (`algo.zip`); backend tetap `1.3.0`.
+
 ---
 
 ## Bagian F — Kecepatan, kuota, dan data
@@ -364,6 +366,7 @@ Angka ini diukur dengan simulator, bukan di server Google sungguhan. Waktu nyata
 | Nama siswa tidak muncul di daftar | Siswa belum ditambahkan / dihapus / salah kelas | Periksa di Kelas & Siswa. Siswa juga bisa memakai *Masuk dengan nama pengguna* |
 | Halaman masuk: *Daftar kelas tidak bisa dimuat* | Internet putus, atau backend belum diperbarui ke 1.3 | Periksa koneksi; perbarui backend (Bagian E) |
 | *Terlalu banyak percobaan salah* | Salah NISN/sandi 8 kali | Tunggu 10 menit |
+| Pesan *"Use → to navigate inside of blocks"* saat menekan spasi/panah | Frontend versi lama (sebelum 1.3.1) | Perbarui frontend ke 1.3.1, lalu Ctrl + Shift + R |
 | Data yang diubah di Sheets tidak muncul | Masih memakai cache | Ringkasan → **🔄 Segarkan data** |
 | Situs GitHub 404 | `index.html` tidak berada di root repository | Lihat isi repo di github.com. Kalau terlihat folder `algo/` atau `frontend/`, ulangi B4 dari folder yang berisi `index.html` |
 | Tampilan berantakan tanpa warna | Folder `css/`/`js/` tidak ikut | Jangan unggah lewat web GitHub; ulangi B4 lewat PowerShell |

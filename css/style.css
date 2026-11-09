@@ -691,3 +691,7 @@ select.input:disabled { opacity: .6; cursor: not-allowed; }
 .nisn-note { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: #FFF6E0; color: #6B4A00; font-size: 13px; line-height: 1.45; }
 .skip-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
 .check b { color: var(--ink); }
+
+/* v1.3: pesan navigasi keyboard bawaan Blockly (bahasa Inggris, mis. "Use → to navigate inside of blocks")
+   tidak dipakai di Algo → disembunyikan */
+.blocklyToast { display: none !important; }

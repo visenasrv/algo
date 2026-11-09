@@ -737,7 +737,7 @@
     }
   };
 
-  global.ALGO_BUILD = '1.3.0';
+  global.ALGO_BUILD = '1.3.1';
   global.AlgoApp = App;
   global.AlgoStore = Store;
   global.AlgoLogo = LOCKUP;
